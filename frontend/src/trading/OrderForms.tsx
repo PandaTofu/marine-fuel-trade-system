@@ -25,7 +25,7 @@ export function OrderEditor({order,onClose,onSaved}:{order?:Order;onClose:()=>vo
  const num=(value:unknown)=>{const parsed=Number(value||0);return Number.isFinite(parsed)?parsed:0;};
  const lines=(values.lines||[]) as Array<Record<string,unknown>>;
  const lineAmounts=lines.map(line=>({sale:multiplyToCents(line.actual_qty,3,line.sale_price,4),cost:multiplyToCents(line.actual_qty,3,line.cost_price,4)}));
- const totals=lineAmounts.reduce((result,line,index)=>({ordered:result.ordered+scaled(lines[index]?.ordered_qty,3),actual:result.actual+scaled(lines[index]?.actual_qty,3),sale:result.sale+line.sale,cost:result.cost+line.cost}),{ordered:0n,actual:0n,sale:0n,cost:0n});
+ const totals=lineAmounts.reduce<{ordered:bigint;actual:bigint;sale:bigint;cost:bigint}>((result,line,index)=>({ordered:result.ordered+scaled(lines[index]?.ordered_qty,3),actual:result.actual+scaled(lines[index]?.actual_qty,3),sale:result.sale+line.sale,cost:result.cost+line.cost}),{ordered:0n,actual:0n,sale:0n,cost:0n});
  const commission=multiplyToCents(quantityText(totals.actual),3,values.commission_rate,4);
  const payable=totals.cost-cents(values.supplier_deposit)-cents(values.supplier_paid);
  const receivable=totals.sale-cents(values.customer_deposit)-cents(values.customer_received)-cents(values.customer_fee);
