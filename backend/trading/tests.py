@@ -21,6 +21,7 @@ from core.models import User
 from .calculations import state, totals, order_numbers
 from .models import Account, Entry, Mutation, Order, OrderRevision, WriteLock
 from .services import account_balance
+from .documents import SALES_TERMS
 
 
 def order_payload(supplied=True):
@@ -32,8 +33,8 @@ def order_payload(supplied=True):
             'customer_fee':'100.00', 'supplier_fee':'50.00', 'berth_fee':'1000.00', 'exceptional_fee':'0.00',
             'salesperson':'李明', 'currency':'USD',
             'lines':[
-                {'oil':'VLSFO','ordered_qty':'100.000','actual_qty':'100.000' if supplied else None,'sale_price':'6000.0000','cost_price':'5600.0000'},
-                {'oil':'MGO','ordered_qty':'50.000','actual_qty':'50.000' if supplied else None,'sale_price':'6200.0000','cost_price':'5800.0000'},
+                {'oil':'VLSFO','ordered_qty_min':'95.000','ordered_qty_max':'105.000','actual_qty':'100.000' if supplied else None,'sale_price':'6000.0000','cost_price':'5600.0000'},
+                {'oil':'MGO','ordered_qty_min':'45.000','ordered_qty_max':'55.000','actual_qty':'50.000' if supplied else None,'sale_price':'6200.0000','cost_price':'5800.0000'},
             ]}
 
 
@@ -80,6 +81,18 @@ class TradingTests(TestCase):
         self.assertEqual(response.status_code,200,response.data)
         return response.json()
 
+    def test_invoice_and_contract_pdf_downloads(self):
+        order=self.create_order()
+        for kind in ['invoice','contract']:
+            response=self.client.get(f"/api/trading/orders/{order['id']}/{kind}/")
+            self.assertEqual(response.status_code,200)
+            self.assertEqual(response['Content-Type'],'application/pdf')
+            self.assertIn(f'{kind}_',response['Content-Disposition'])
+            self.assertTrue(response.content.startswith(b'%PDF-'))
+            self.assertGreater(len(response.content),1000)
+        self.assertEqual(len(SALES_TERMS),4)
+        self.assertTrue(all(term.strip() for term in SALES_TERMS))
+
     def test_full_multiline_money_and_due_date_fixture(self):
         with patch('trading.calculations.timezone.localdate',return_value=date(2026,9,12)):
             payload=order_payload()
@@ -87,7 +100,7 @@ class TradingTests(TestCase):
             order=self.create_order(payload)
             order=self.settle(order,customer_deposit='100000.00',customer_received='300000.00',supplier_deposit='100000.00',supplier_paid='200000.00')
             n=order['numbers']
-            expected={'quantity':'150.000','sales':'910000.00','cost':'850000.00','commission':'7500.00','profit':'51350.00','receivable':'509900.00','payable':'550000.00','customer_due':'2026-09-11','supplier_due':'2026-09-16','customer_status':'overdue','supplier_status':'partial'}
+            expected={'quantity':'150.000','sales':'910000.00','cost':'850000.00','commission':'7500.00','profit':'51350.00','receivable':'509900.00','payable':'550000.00','customer_due':'2026-09-10','supplier_due':'2026-09-15','customer_status':'overdue','supplier_status':'partial'}
             for key,value in expected.items():
                 self.assertEqual(n[key],value,key)
             self.assertEqual(account_balance(self.account),Decimal('1100000.00'))
@@ -135,7 +148,7 @@ class TradingTests(TestCase):
 
     def test_fee_net_receipt_does_not_deduct_cash_twice(self):
         payload=order_payload()
-        payload['lines']=[{'oil':'Fuel','ordered_qty':'1.000','actual_qty':'1.000','sale_price':'100000.0000','cost_price':'90000.0000'}]
+        payload['lines']=[{'oil':'Fuel','ordered_qty_min':'1.000','ordered_qty_max':'1.000','actual_qty':'1.000','sale_price':'100000.0000','cost_price':'90000.0000'}]
         order=self.create_order(payload)
         order=self.settle(order,customer_received='99900.00')
         self.assertEqual(order['numbers']['receivable'],'0.00')
@@ -239,9 +252,9 @@ class TradingTests(TestCase):
         response=self.write(f"orders/{order['id']}/",supplied,method='patch')
         self.assertEqual(response.status_code,200,response.data)
         response=self.write(f"orders/{order['id']}/",{'version':response.json()['version'],'actual_date':None,'reason':'Clear only date'},method='patch')
-        self.assertEqual(response.status_code,400)
+        self.assertEqual(response.status_code,200,response.data)
         row=Order.objects.get(pk=order['id'])
-        self.assertIsNotNone(row.actual_date)
+        self.assertIsNone(row.actual_date)
 
     def test_edit_below_received_rolls_back_lines_and_snapshot(self):
         order=self.settle(self.create_order(),customer_received='400000.00')
@@ -265,10 +278,23 @@ class TradingTests(TestCase):
         self.assertTrue(order['numbers']['profit'].startswith('-'))
         for altered in [dict(payload,currency='CNY'),dict(payload,customer_fee='-1'),dict(payload,exceptional_fee='-1'),dict(payload,lines=[])]:
             self.assertEqual(self.write('orders/',altered).status_code,400)
-        precision=copy.deepcopy(payload);precision['lines'][0]['ordered_qty']='1.0001'
+        precision=copy.deepcopy(payload);precision['lines'][0]['ordered_qty_min']='1.0001'
         self.assertEqual(self.write('orders/',precision).status_code,400)
         future=dict(payload,actual_date=(timezone.localdate()+timedelta(days=1)).isoformat())
-        self.assertEqual(self.write('orders/',future).status_code,400)
+        self.assertEqual(self.write('orders/',future).status_code,201)
+
+    def test_ordered_quantity_range_and_independent_actual_fields(self):
+        payload=order_payload(False)
+        payload['lines'][0]['ordered_qty_min']='106.000'
+        self.assertEqual(self.write('orders/',payload).status_code,400)
+        payload=order_payload(False)
+        payload['lines'][0]['actual_qty']='100.000'
+        response=self.write('orders/',payload)
+        self.assertEqual(response.status_code,201,response.data)
+        payload=order_payload(False)
+        payload['actual_date']=(timezone.localdate()+timedelta(days=7)).isoformat()
+        response=self.write('orders/',payload)
+        self.assertEqual(response.status_code,201,response.data)
 
     def test_manual_cash_expense_does_not_change_accrued_profit(self):
         order=self.create_order()

@@ -2,7 +2,7 @@ export type DecimalText = string;
 export type Component = 'customer_deposit'|'customer_received'|'supplier_deposit'|'supplier_paid';
 export const components: Component[] = ['customer_deposit','customer_received','supplier_deposit','supplier_paid'];
 export interface Line {
-  id?: number; oil: string; ordered_qty: DecimalText; actual_qty: DecimalText|null;
+  id?: number; oil: string; ordered_qty_min: DecimalText; ordered_qty_max: DecimalText; actual_qty: DecimalText|null;
   sale_price: DecimalText; cost_price: DecimalText; sale_amount?: string; cost_amount?: string;
 }
 export interface Numbers extends Record<Component, string> {

@@ -136,8 +136,8 @@ def validate_paid(order):
         sales, cost = amounts['sales'], amounts['cost']
     else:
         # Deposits before supply are capped by the contracted ordered quantity.
-        sales = sum((money(line.ordered_qty * line.sale_price) for line in order.lines.all()), ZERO)
-        cost = sum((money(line.ordered_qty * line.cost_price) for line in order.lines.all()), ZERO)
+        sales = sum((money(line.ordered_qty_max * line.sale_price) for line in order.lines.all()), ZERO)
+        cost = sum((money(line.ordered_qty_max * line.cost_price) for line in order.lines.all()), ZERO)
         if paid['customer_received'] or paid['supplier_paid']:
             raise BusinessError('supply_required')
     if paid['customer_deposit'] + paid['customer_received'] + order.customer_fee > sales:

@@ -78,14 +78,18 @@ class OrderLine(models.Model):
     order = models.ForeignKey(Order, related_name='lines', on_delete=models.CASCADE)
     position = models.PositiveSmallIntegerField()
     oil = models.CharField(max_length=160)
-    ordered_qty = models.DecimalField(max_digits=12, decimal_places=3)
+    ordered_qty_min = models.DecimalField(max_digits=12, decimal_places=3)
+    ordered_qty_max = models.DecimalField(max_digits=12, decimal_places=3)
     actual_qty = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
     sale_price = models.DecimalField(max_digits=12, decimal_places=4)
     cost_price = models.DecimalField(max_digits=12, decimal_places=4)
 
     class Meta:
         ordering = ['position', 'id']
-        constraints = [models.CheckConstraint(condition=models.Q(ordered_qty__gte=0, sale_price__gte=0, cost_price__gte=0) & (models.Q(actual_qty__isnull=True) | models.Q(actual_qty__gte=0)), name='trading_line_nonnegative')]
+        constraints = [
+            models.CheckConstraint(condition=models.Q(ordered_qty_min__gte=0, ordered_qty_max__gte=0, sale_price__gte=0, cost_price__gte=0) & (models.Q(actual_qty__isnull=True) | models.Q(actual_qty__gte=0)), name='trading_line_nonnegative'),
+            models.CheckConstraint(condition=models.Q(ordered_qty_min__lte=models.F('ordered_qty_max')), name='trading_ordered_qty_range'),
+        ]
 
 
 class Entry(models.Model):

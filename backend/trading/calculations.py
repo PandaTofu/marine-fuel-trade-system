@@ -49,8 +49,9 @@ def order_numbers(order, entries=None):
     paid = settlement_totals(order.entries.all() if entries is None else entries)
     receivable = result['sales'] - paid['customer_deposit'] - paid['customer_received'] - order.customer_fee
     payable = result['cost'] - paid['supplier_deposit'] - paid['supplier_paid']
-    customer_due = order.actual_date + timedelta(days=order.customer_term) if order.actual_date else None
-    supplier_due = order.actual_date + timedelta(days=order.supplier_term) if order.actual_date else None
+    # The supply date is day one of the agreed payment term.
+    customer_due = order.actual_date + timedelta(days=max(order.customer_term - 1, 0)) if order.actual_date else None
+    supplier_due = order.actual_date + timedelta(days=max(order.supplier_term - 1, 0)) if order.actual_date else None
     result.update(paid)
     result.update(receivable=receivable, payable=payable, customer_due=customer_due, supplier_due=supplier_due)
     result['customer_status'] = state(receivable, paid['customer_deposit'] + paid['customer_received'], customer_due, order.actual_date, order.state)

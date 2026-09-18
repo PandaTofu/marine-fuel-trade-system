@@ -6,7 +6,7 @@ import {useTranslation} from 'react-i18next';
 import {useAuth} from '../auth';
 import {api} from '../api';
 import {ErrorBox} from '../components';
-import {cash,Metrics,query,ReasonDialog,Status,useCommand,useResource} from './shared';
+import {cash,downloadOrderDocument,Metrics,query,ReasonDialog,Status,useCommand,useResource} from './shared';
 import {OrderDetail,OrderEditor,SettlementEditor} from './OrderForms';
 import type {Order,OrderList} from './types';
 
@@ -33,10 +33,10 @@ export default function Orders({settlements=false}:{settlements?:boolean}){
  </Space>:<Space size={6}>
   <Button size="small" icon={<EditOutlined/>} onClick={()=>setEditor(o)}>{t('biz.edit')}</Button>
   <Button size="small" danger icon={<DeleteOutlined/>} disabled={user?.role!=='admin'} title={user?.role==='admin'?undefined:t('biz.adminDeleteOnly')} onClick={()=>setClosing({action:'delete',rows:[o]})}>{t('biz.delete')}</Button>
-  <Dropdown trigger={['click']} menu={{items:[
+  <Dropdown trigger={['click']} menu={{onClick:async({key})=>{if(key==='export-contract'||key==='issue-invoice'){setError('');try{await downloadOrderDocument(o.id,key==='export-contract'?'contract':'invoice');}catch(e){setError((e as Error).message);}}},items:[
    {key:'export-order',icon:<FileExcelOutlined/>,label:t('biz.exportOrderExcel'),disabled:true},
-   {key:'export-contract',icon:<FilePdfOutlined/>,label:t('biz.exportContract'),disabled:true},
-   {key:'issue-invoice',icon:<FileDoneOutlined/>,label:t('biz.issueInvoice'),disabled:true},
+   {key:'export-contract',icon:<FilePdfOutlined/>,label:t('biz.exportContract')},
+   {key:'issue-invoice',icon:<FileDoneOutlined/>,label:t('biz.issueInvoice')},
   ]}}><Button size="small" icon={<MoreOutlined/>}>{t('biz.moreActions')}</Button></Dropdown>
  </Space>)}
  {o.state!=='active'&&<Status value={o.state}/>}</div>},
@@ -53,7 +53,7 @@ export default function Orders({settlements=false}:{settlements?:boolean}){
  <Form.Item><Button htmlType="submit" type="primary">{t('biz.filter')}</Button></Form.Item>
  <Form.Item><Button onClick={()=>{filterForm.resetFields();filterForm.setFieldValue('state',undefined);setFilters({});setPage(1);setSelected([]);}}>{t('biz.reset')}</Button></Form.Item>
  </Form></Card>
- <div className="business-toolbar"><Button type="primary" onClick={()=>setEditor('new')}>{t('biz.createOrder')}</Button>
+ <div className="business-toolbar">{!settlements&&<Button type="primary" onClick={()=>setEditor('new')}>{t('biz.createOrder')}</Button>}
  {user?.role==='admin'&&<Space><Button danger disabled={!selected.length} onClick={()=>setClosing({action:'bulk',rows:selected})}>{t('biz.deleteSelected')} ({selected.length})</Button><Button danger onClick={async()=>{setError('');try{const rows=await api<{id:number;version:number}[]>('trading/orders/clear-snapshot/');if(rows.length)setClosing({action:'clear',rows});}catch(e){setError((e as Error).message);}}}>{t('biz.clearAll')}</Button></Space>}</div>
  <ErrorBox error={r.error||error} retry={r.refresh}/>
  <Table<Order> rowKey="id" loading={r.loading} dataSource={r.data?.results} columns={columns} scroll={{x:2300}} rowSelection={user?.role==='admin'?{selectedRowKeys:selected.map(o=>o.id),onChange:(_,rows)=>setSelected(rows),getCheckboxProps:o=>({disabled:o.state!=='active'})}:undefined} pagination={{current:page,pageSize:20,total:r.data?.count,showSizeChanger:false,onChange:value=>{setPage(value);setSelected([]);}}}/>

@@ -11,7 +11,7 @@ export function Brand() {
   const { t } = useTranslation();
   return (
     <Link className="brand" to="/">
-      <span className="brand-symbol">≋</span>
+      <span className="brand-logo"><img src="/assets/company-logo.png" alt="" /></span>
       <span>
         {t("brand")}
         <small>VESSEL TRADE MANAGEMENT</small>

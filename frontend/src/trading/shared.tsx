@@ -57,4 +57,9 @@ export async function downloadLedger(params:Record<string,unknown>){
  if(!res.ok){const body=await res.json().catch(()=>({code:'server_error'}));if(['session_expired','not_authenticated'].includes(body.code))window.dispatchEvent(new Event('session-ended'));throw new ApiError(body.code,res.status);}
  const blob=await res.blob();const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`ledger_${today()}.xlsx`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
+export async function downloadOrderDocument(orderId:number,kind:'invoice'|'contract'){
+ const res=await fetch(`/api/trading/orders/${orderId}/${kind}/`,{credentials:'same-origin'});
+ if(!res.ok){const body=await res.json().catch(()=>({code:'server_error'}));if(['session_expired','not_authenticated'].includes(body.code))window.dispatchEvent(new Event('session-ended'));throw new ApiError(body.code,res.status);}
+ const blob=await res.blob();const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=`${kind}_${orderId}.pdf`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
 

@@ -10,6 +10,7 @@ from .serializers import OrderSerializer, EntrySerializer, SettlementSerializer,
 from .services import command, save_order, save_account, delete_account, account_data, account_balance, locked_order, settle, refund, manual_entry, reverse_entry, close_order, require_admin, BusinessError
 from .calculations import text, ZERO
 from .exports import workbook
+from .documents import invoice_pdf, contract_pdf
 
 
 def validated(serializer_class, data):
@@ -104,6 +105,18 @@ def order_detail(request, pk):
     except Order.DoesNotExist:
         raise BusinessError('not_found',404)
     return Response(OrderSerializer(row).data)
+
+
+@api_view(['GET'])
+def order_document(request, pk, kind):
+    try:
+        row = Order.objects.exclude(state='deleted').prefetch_related('lines', 'entries').get(pk=pk)
+    except Order.DoesNotExist:
+        raise BusinessError('not_found', 404)
+    content = invoice_pdf(row) if kind == 'invoice' else contract_pdf(row)
+    response = HttpResponse(content, content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="{kind}_{row.order_date:%Y%m%d}_{row.pk:06d}.pdf"'
+    return response
 
 
 @api_view(['POST'])

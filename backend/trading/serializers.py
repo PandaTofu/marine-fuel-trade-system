@@ -11,8 +11,13 @@ class LineSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = OrderLine
-        fields = ['id', 'oil', 'ordered_qty', 'actual_qty', 'sale_price', 'cost_price', 'sale_amount', 'cost_amount']
-        extra_kwargs = {key: {'min_value': Decimal(0)} for key in ['ordered_qty', 'actual_qty', 'sale_price', 'cost_price']}
+        fields = ['id', 'oil', 'ordered_qty_min', 'ordered_qty_max', 'actual_qty', 'sale_price', 'cost_price', 'sale_amount', 'cost_amount']
+        extra_kwargs = {key: {'min_value': Decimal(0)} for key in ['ordered_qty_min', 'ordered_qty_max', 'actual_qty', 'sale_price', 'cost_price']}
+
+    def validate(self, attrs):
+        if attrs['ordered_qty_min'] > attrs['ordered_qty_max']:
+            raise serializers.ValidationError({'ordered_qty_max': 'ordered_quantity_range'})
+        return attrs
 
     def get_sale_amount(self, row):
         return text((row.actual_qty or 0) * row.sale_price)
@@ -43,7 +48,6 @@ class OrderSerializer(serializers.ModelSerializer):
         return f'BO-{row.order_date:%Y%m%d}-{row.pk:06d}'
 
     def validate(self, attrs):
-        actual = attrs.get('actual_date', getattr(self.instance, 'actual_date', None))
         currency = attrs.get('currency', getattr(self.instance, 'currency', 'USD'))
         if currency != 'USD':
             raise serializers.ValidationError({'currency': 'usd_only'})
@@ -53,17 +57,9 @@ class OrderSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'estimated_start_date': 'estimated_range_required', 'estimated_end_date': 'estimated_range_required'})
         if estimated_start and estimated_end and estimated_start > estimated_end:
             raise serializers.ValidationError({'estimated_end_date': 'estimated_range_order'})
-        if actual and actual > timezone.localdate():
-            raise serializers.ValidationError({'actual_date': 'future_date'})
         lines = attrs.get('lines')
         if lines is not None and (not lines or len(lines) > 100):
             raise serializers.ValidationError({'lines': 'one_to_100_lines'})
-        rows = lines if lines is not None else [{'actual_qty': line.actual_qty} for line in self.instance.lines.all()] if self.instance else []
-        if actual:
-            if any(row.get('actual_qty') is None for row in rows) or sum(row['actual_qty'] for row in rows) <= 0:
-                raise serializers.ValidationError({'lines': 'actual_quantity_required'})
-        elif any(row.get('actual_qty') is not None for row in rows):
-            raise serializers.ValidationError({'actual_date': 'required_with_actual_quantity'})
         return attrs
 
 
