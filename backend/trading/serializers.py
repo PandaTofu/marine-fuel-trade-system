@@ -11,10 +11,15 @@ class LineSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = OrderLine
-        fields = ['id', 'oil', 'ordered_qty_min', 'ordered_qty_max', 'actual_qty', 'sale_price', 'cost_price', 'sale_amount', 'cost_amount']
+        fields = ['id', 'oil', 'oil_reference', 'ordered_qty_min', 'ordered_qty_max', 'actual_qty', 'sale_price', 'cost_price', 'sale_amount', 'cost_amount']
         extra_kwargs = {key: {'min_value': Decimal(0)} for key in ['ordered_qty_min', 'ordered_qty_max', 'actual_qty', 'sale_price', 'cost_price']}
 
     def validate(self, attrs):
+        reference = attrs.get('oil_reference')
+        if reference:
+            if reference.kind != 'oil':
+                raise serializers.ValidationError({'oil_reference': 'reference_kind'})
+            attrs['oil'] = reference.name
         if attrs['ordered_qty_min'] > attrs['ordered_qty_max']:
             raise serializers.ValidationError({'ordered_qty_max': 'ordered_quantity_range'})
         return attrs
@@ -27,6 +32,7 @@ class LineSerializer(serializers.ModelSerializer):
 
 
 class OrderSerializer(serializers.ModelSerializer):
+    save_as_draft = serializers.BooleanField(required=False, default=False, write_only=True)
     customer_deposit = serializers.DecimalField(max_digits=18, decimal_places=2, min_value=0, required=False, write_only=True)
     customer_received = serializers.DecimalField(max_digits=18, decimal_places=2, min_value=0, required=False, write_only=True)
     supplier_deposit = serializers.DecimalField(max_digits=18, decimal_places=2, min_value=0, required=False, write_only=True)
@@ -37,7 +43,7 @@ class OrderSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Order
-        fields = ['id', 'number', 'public_id', 'order_date', 'customer', 'supplier', 'vessel', 'port', 'imo', 'estimated_start_date', 'estimated_end_date', 'actual_date', 'customer_term_description', 'customer_term', 'supplier_term_description', 'supplier_term', 'commission_rate', 'commission_recipient', 'salesperson', 'customer_fee', 'supplier_fee', 'berth_fee', 'exceptional_fee', 'customer_deposit', 'customer_received', 'supplier_deposit', 'supplier_paid', 'note', 'currency', 'state', 'version', 'lines', 'numbers', 'updated_at']
+        fields = ['id', 'number', 'public_id', 'order_date', 'customer', 'customer_reference', 'supplier', 'supplier_reference', 'vessel', 'port', 'port_reference', 'imo', 'estimated_start_date', 'estimated_end_date', 'actual_date', 'customer_term_description', 'customer_term', 'supplier_term_description', 'supplier_term', 'commission_rate', 'commission_recipient', 'salesperson', 'salesperson_reference', 'customer_fee', 'supplier_fee', 'berth_fee', 'exceptional_fee', 'customer_deposit', 'customer_received', 'supplier_deposit', 'supplier_paid', 'save_as_draft', 'note', 'currency', 'state', 'version', 'lines', 'numbers', 'updated_at']
         read_only_fields = ['state', 'version', 'public_id', 'updated_at']
         extra_kwargs = {key: {'min_value': Decimal(0)} for key in ['commission_rate', 'customer_fee', 'supplier_fee', 'berth_fee', 'exceptional_fee']}
 
@@ -48,6 +54,17 @@ class OrderSerializer(serializers.ModelSerializer):
         return f'BO-{row.order_date:%Y%m%d}-{row.pk:06d}'
 
     def validate(self, attrs):
+        for field, expected_kind, snapshot in [
+            ('customer_reference', 'customer', 'customer'),
+            ('supplier_reference', 'supplier', 'supplier'),
+            ('port_reference', 'port', 'port'),
+            ('salesperson_reference', 'salesperson', 'salesperson'),
+        ]:
+            reference = attrs.get(field)
+            if reference:
+                if reference.kind != expected_kind:
+                    raise serializers.ValidationError({field: 'reference_kind'})
+                attrs[snapshot] = reference.name
         currency = attrs.get('currency', getattr(self.instance, 'currency', 'USD'))
         if currency != 'USD':
             raise serializers.ValidationError({'currency': 'usd_only'})
@@ -71,12 +88,6 @@ class AccountSerializer(serializers.ModelSerializer):
         extra_kwargs = {'opening_balance': {'min_value': Decimal(0)}}
         # Conditional uniqueness is maintained atomically when changing the default.
         validators = []
-
-    def validate_currency(self, value):
-        if value != 'USD':
-            raise serializers.ValidationError('usd_only')
-        return value
-
 
 class SettlementSerializer(serializers.Serializer):
     version = serializers.IntegerField(min_value=1)
@@ -141,13 +152,14 @@ class ReasonInput(serializers.Serializer):
 
 class EntrySerializer(serializers.ModelSerializer):
     account_name = serializers.CharField(source='account.name', read_only=True)
+    account_currency = serializers.CharField(source='account.currency', read_only=True)
     actor_name = serializers.CharField(source='actor.username', read_only=True)
     order_number = serializers.SerializerMethodField()
     reversed = serializers.SerializerMethodField()
 
     class Meta:
         model = Entry
-        fields = ['id', 'account', 'account_name', 'order', 'order_number', 'date', 'direction', 'category', 'amount', 'component', 'settlement_delta', 'source', 'reason', 'actor_name', 'reversal_of', 'reversed', 'created_at']
+        fields = ['id', 'account', 'account_name', 'account_currency', 'order', 'order_number', 'date', 'direction', 'category', 'amount', 'component', 'settlement_delta', 'source', 'reason', 'actor_name', 'reversal_of', 'reversed', 'created_at']
 
     def get_order_number(self, row):
         return f'BO-{row.order.order_date:%Y%m%d}-{row.order_id:06d}' if row.order_id else ''

@@ -195,12 +195,13 @@ class References(ModelViewSet):
             qs = qs.filter(kind=kind)
         q = self.request.query_params.get('q')
         if q:
-            qs = qs.filter(Q(name__icontains=q) | Q(name_en__icontains=q) | Q(code__icontains=q))
+            qs = qs.filter(Q(name__icontains=q) | Q(code__icontains=q))
         return qs
 
     def perform_create(self, serializer):
         with transaction.atomic():
             row = serializer.save()
+            row.assign_code()
             audit(self.request, 'reference_created', row.pk)
 
     def perform_update(self, serializer):

@@ -53,10 +53,7 @@ export interface User {
 export interface Reference {
   id: number;
   kind: string;
-  code: string;
+  code: string | null;
   name: string;
-  name_en: string;
-  contact: string;
-  note: string;
   is_active: boolean;
 }

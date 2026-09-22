@@ -19,6 +19,8 @@ from .calculations import money as rounded_money, order_numbers
 
 
 COMPANY = 'Bond Shipping and Trading Limited'
+COMPANY_ADDRESS = 'ROOM E18, NO.107, 1/F, BLK A, HANGWAI IND CTR, NO.6, KIN TAI ST, TUEN MUN, N.T., HONG KONG'
+COMPANY_EMAIL = 'bunker@bond-shipping.com'
 SALES_TERMS = (
     'Delivery always subject to weather conditions.',
     "Overtime / extra charges, if any, are for Buyer's account.",
@@ -57,13 +59,11 @@ def styles():
     return sheet, body, small
 
 
-def header(company_address, email, chinese=False):
+def header(company_address, email):
     sheet, body, small = styles()
     path = logo_path()
     mark = Image(str(path), width=35*mm, height=20*mm, kind='proportional') if path.exists() else ''
     name = f'<b><font size="18" color="#101b70">{COMPANY}</font></b>'
-    if chinese:
-        name += '<br/><font name="STSong-Light" size="11" color="#101b70">帮 德 航 运 贸 易 有 限 公 司</font>'
     block = Table([[mark, Paragraph(name, body)]], colWidths=[40*mm, 137*mm])
     block.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'MIDDLE'),('LEFTPADDING',(0,0),(-1,-1),0),('RIGHTPADDING',(0,0),(-1,-1),0)]))
     contact = Paragraph(f'Address: {value(company_address)} &nbsp;&nbsp;&nbsp; Email: {value(email)}', small)
@@ -94,7 +94,7 @@ def invoice_pdf(order):
     sheet, body, small = styles()
     number = order_number(order)
     numbers = order_numbers(order)
-    story = header('ROOM E18, NO.107, 1/F, BLK A, HANGWAI IND CTR, NO.6, KIN TAI ST, TUEN MUN, N.T., HONG KONG', 'bunker@bond-shipping.com')
+    story = header(COMPANY_ADDRESS, COMPANY_EMAIL)
     story += [Paragraph('<u><b>SALES INVOICE</b></u>', sheet['Heading3']), Spacer(1, 5*mm),
               Paragraph('Master and Owners and /or Managing Owners and/or Operators and/or Charterers and /or Buyers', body),
               Paragraph(f'of <b>{value(order.vessel)}</b> and:', body), Paragraph(f'<b>{value(order.customer)}</b>', body), Spacer(1, 3*mm)]
@@ -135,7 +135,7 @@ def range_text(line):
 def contract_pdf(order):
     sheet, body, small = styles()
     number=order_number(order)
-    story=header('B3, 19/F, Tung Lee Commercial Building, 91-97 Jervois Street, Sheung Wan, Hong Kong','bunker@bondfuels.com',True)
+    story=header(COMPANY_ADDRESS, COMPANY_EMAIL)
     title=ParagraphStyle('ContractTitle',parent=sheet['Heading1'],fontName='Helvetica-Bold',fontSize=17,alignment=TA_CENTER,spaceAfter=8)
     right=ParagraphStyle('Right',parent=body,alignment=TA_RIGHT)
     story += [Paragraph('BUNKER CONFIRMATION',title),Paragraph(f'Ref: {value(number)}<br/>Date: {day(order.order_date,True)}',right),Spacer(1,4*mm),

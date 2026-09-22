@@ -12,8 +12,8 @@ class UserSerializer(serializers.ModelSerializer):
 class ReferenceSerializer(serializers.ModelSerializer):
     class Meta:
         model = Reference
-        fields = '__all__'
-        read_only_fields = ['updated_at']
+        fields = ['id', 'kind', 'code', 'name', 'is_active', 'updated_at']
+        read_only_fields = ['code', 'updated_at']
 
 
 class CompanySerializer(serializers.ModelSerializer):

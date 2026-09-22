@@ -74,18 +74,35 @@ def account_balance(account):
 
 def account_data(account):
     result = dict(AccountSerializer(account).data)
-    result['balance'] = text(account_balance(account))
     entries = list(account.entries.all())
-    result['ledger_income'] = text(sum((entry.amount for entry in entries if entry.direction == 'income'), ZERO))
-    result['ledger_expense'] = text(sum((entry.amount for entry in entries if entry.direction == 'expense'), ZERO))
-    result['has_entries'] = account.entries.exists()
+    income = sum((entry.amount for entry in entries if entry.direction == 'income'), ZERO)
+    expense = sum((entry.amount for entry in entries if entry.direction == 'expense'), ZERO)
+    expected = Decimal(account.opening_balance) + income - expense
+    balance = account_balance(account)
+    result.update(
+        ledger_income=text(income),
+        ledger_expense=text(expense),
+        expected_balance=text(expected),
+        balance=text(balance),
+        opening_difference=text(balance - expected),
+        reconciled=balance == expected,
+        has_entries=bool(entries),
+    )
     return result
 
 
-def choose_account(pk=None):
-    account = Account.objects.filter(pk=pk).first() if pk else Account.objects.filter(is_default=True).first()
-    if not account or not account.is_active or account.currency != 'USD':
+def choose_account(pk=None, currency='USD'):
+    if pk:
+        account = Account.objects.filter(pk=pk).first()
+    elif currency:
+        account = Account.objects.filter(is_default=True, currency=currency).first()
+    else:
+        account = (Account.objects.filter(is_default=True, currency='USD').first()
+                   or Account.objects.filter(is_default=True).first())
+    if not account or not account.is_active:
         raise BusinessError('account_required')
+    if currency and account.currency != currency:
+        raise BusinessError('account_currency_mismatch')
     return account
 
 
@@ -96,14 +113,16 @@ def save_account(actor, data, pk=None, version=None):
         raise BusinessError('not_found', 404)
     if row:
         check_version(row, version)
-    serializer = AccountSerializer(row, data=data, partial=row is not None)
+    payload = data.copy()
+    requested_default = bool(payload.pop('is_default', False))
+    serializer = AccountSerializer(row, data=payload, partial=row is not None)
     serializer.is_valid(raise_exception=True)
     values = serializer.validated_data
     if row and row.entries.exists() and values.get('opening_balance', row.opening_balance) != row.opening_balance:
         raise BusinessError('opening_locked')
-    default = values.get('is_default', row.is_default if row else not Account.objects.exists())
-    if row is None and not Account.objects.exists():
-        default = True
+    if row and row.entries.exists() and values.get('currency', row.currency) != row.currency:
+        raise BusinessError('account_currency_locked')
+    default = (row.is_default or requested_default) if row else not Account.objects.exists()
     active = values.get('is_active', row.is_active if row else True)
     if default and not active:
         raise BusinessError('default_must_be_active')
@@ -122,8 +141,15 @@ def delete_account(actor, pk, version):
     check_version(row, version)
     if row.entries.exists():
         raise BusinessError('account_has_entries')
+    was_default = row.is_default
     Audit.objects.create(actor=actor, action='account_deleted', target=str(row.pk))
     row.delete()
+    if was_default:
+        replacement = Account.objects.filter(is_active=True).order_by('id').first()
+        if replacement:
+            replacement.is_default = True
+            replacement.version = F('version') + 1
+            replacement.save(update_fields=['is_default', 'version'])
     return {'ok': True}
 
 
@@ -158,9 +184,12 @@ def revision(order, actor, action, reason='', bump=True):
 
 def save_order(actor, payload, pk=None):
     row = locked_order(pk) if pk else None
+    previous_state = row.state if row else None
     if row:
-        writable(row, payload.get('version'))
-        if row.entries.exists() and not str(payload.get('reason', '')).strip():
+        check_version(row, payload.get('version'))
+        if row.state not in ['active', 'draft']:
+            raise BusinessError('order_closed', 409)
+        if row.state == 'active' and row.entries.exists() and not str(payload.get('reason', '')).strip():
             raise BusinessError('reason_required')
     if len(str(payload.get('reason', ''))) > 1000:
         raise BusinessError('invalid')
@@ -168,7 +197,14 @@ def save_order(actor, payload, pk=None):
     serializer.is_valid(raise_exception=True)
     values = dict(serializer.validated_data)
     lines = values.pop('lines', None)
+    save_as_draft = values.pop('save_as_draft', False)
     settlements = {key: values.pop(key) for key in COMPONENTS if key in values}
+    if row and row.state == 'active' and save_as_draft:
+        raise BusinessError('active_order_cannot_be_draft')
+    if save_as_draft:
+        values.update(state='draft')
+    else:
+        values.update(state='active')
     if row is None:
         row = Order.objects.create(**values)
     else:
@@ -178,9 +214,9 @@ def save_order(actor, payload, pk=None):
     if lines is not None:
         row.lines.all().delete()
         OrderLine.objects.bulk_create([OrderLine(order=row, position=i, **line) for i, line in enumerate(lines)])
-    if settlements:
+    if settlements and not save_as_draft:
         paid = settlement_totals(row.entries.all())
-        target_account = choose_account() if any(settlements.get(key, paid[key]) > paid[key] for key in COMPONENTS) else None
+        target_account = choose_account(currency=row.currency) if any(settlements.get(key, paid[key]) > paid[key] for key in COMPONENTS) else None
         posting_date = row.order_date
         if posting_date > timezone.localdate() and any(settlements.get(key, paid[key]) != paid[key] for key in COMPONENTS):
             raise BusinessError('future_date')
@@ -190,8 +226,10 @@ def save_order(actor, payload, pk=None):
             if delta:
                 post_component(row, actor, key, delta, posting_date, target_account,
                                source='correction' if delta < 0 else 'settlement', reason=reason)
-    validate_paid(row)
-    return revision(row, actor, 'updated' if pk else 'created', str(payload.get('reason', '')), bump=bool(pk))
+    if not save_as_draft:
+        validate_paid(row)
+    action = 'draft' if save_as_draft else 'activated' if previous_state == 'draft' else 'updated' if pk else 'created'
+    return revision(row, actor, action, str(payload.get('reason', '')), bump=bool(pk))
 
 
 def post_component(order, actor, component, delta, date, account=None, source='settlement', reason=''):
@@ -201,7 +239,7 @@ def post_component(order, actor, component, delta, date, account=None, source='s
     category = 'customer_receipt' if customer else 'supplier_payment'
     normal = 'income' if customer else 'expense'
     if delta > 0:
-        Entry.objects.create(order=order, account=account or choose_account(), actor=actor, date=date, amount=delta, component=component, settlement_delta=delta, category=category, direction=normal, source=source, reason=reason)
+        Entry.objects.create(order=order, account=account or choose_account(currency=order.currency), actor=actor, date=date, amount=delta, component=component, settlement_delta=delta, category=category, direction=normal, source=source, reason=reason)
         return
     if not reason.strip():
         raise BusinessError('reason_required')
@@ -232,7 +270,7 @@ def settle(order, actor, values):
     reason = values.get('reason', '')
     target_account = None
     if any(values.get(key, paid[key]) > paid[key] for key in COMPONENTS):
-        target_account = choose_account(values.get('account_id'))
+        target_account = choose_account(values.get('account_id'), order.currency)
     for key in COMPONENTS:
         delta = values.get(key, paid[key]) - paid[key]
         if delta:
@@ -257,8 +295,8 @@ def refund(order, actor, values):
 
 
 def manual_entry(actor, values):
-    account = choose_account(values.get('account_id'))
     order = locked_order(values['order_id']) if values.get('order_id') else None
+    account = choose_account(values.get('account_id'), order.currency if order else None)
     if order:
         writable(order, values.get('version'))
     category = values['category']
@@ -303,9 +341,13 @@ def reverse_entry(actor, pk, values):
 
 def close_order(order, actor, version, reason, void=False, date=None):
     require_admin(actor)
-    writable(order, version)
+    check_version(order, version)
+    if order.state not in ['active', 'draft']:
+        raise BusinessError('order_closed', 409)
     if not reason.strip():
         raise BusinessError('reason_required')
+    if order.state == 'draft' and void:
+        raise BusinessError('order_closed', 409)
     if not void and order.entries.exists():
         raise BusinessError('posted_order_protected')
     if void:

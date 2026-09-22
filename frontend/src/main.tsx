@@ -52,7 +52,8 @@ function Root() {
                   <Route path="orders" element={<Orders />} />
                   <Route path="settlements" element={<Orders settlements />} />
                   <Route path="funds" element={<Funds />} />
-                  <Route path="reference" element={<References />} />
+                  <Route path="reference" element={<Navigate to="/app/reference/customer" replace />} />
+                  <Route path="reference/:kind" element={<References />} />
                   <Route path="users" element={<Users />} />
                   <Route path="company" element={<Company />} />
                   <Route path="security" element={<PasswordForm />} />

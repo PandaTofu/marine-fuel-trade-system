@@ -1,8 +1,13 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Button, Card, Menu, Spin, Tag } from "antd";
 import {
   AppstoreOutlined,
   DatabaseOutlined,
+  BookOutlined,
+  ExperimentOutlined,
+  EnvironmentOutlined,
+  IdcardOutlined,
+  ShopOutlined,
   TeamOutlined,
   SettingOutlined,
   SafetyOutlined,
@@ -32,17 +37,22 @@ export default function Workspace() {
       </div>
     );
   if (!user) return <Navigate to="/login" replace />;
+  const item = (path: string, label: string, icon: ReactNode) => ({key:path,icon,label:<Link to={path}>{t(label)}</Link>});
   const menu = [
-    ["/app", "overview", <AppstoreOutlined />],
-    ["/app/orders", "biz.orders", <DatabaseOutlined />],
-    ["/app/settlements", "biz.settlements", <AppstoreOutlined />],
-    ["/app/funds", "biz.funds", <DatabaseOutlined />],
-    ["/app/reference", "references", <DatabaseOutlined />],
-    ...(user.role === "admin"
-      ? [["/app/users", "users", <TeamOutlined />]]
-      : []),
-    ["/app/company", "settings", <SettingOutlined />],
-    ["/app/security", "security", <SafetyOutlined />],
+    item("/app", "overview", <AppstoreOutlined />),
+    item("/app/orders", "biz.orders", <DatabaseOutlined />),
+    item("/app/settlements", "biz.settlements", <AppstoreOutlined />),
+    item("/app/funds", "biz.funds", <DatabaseOutlined />),
+    {key:"reference-root",icon:<BookOutlined/>,label:t("references"),children:[
+      item("/app/reference/customer","customerManagement",<TeamOutlined/>),
+      item("/app/reference/supplier","supplierManagement",<ShopOutlined/>),
+      item("/app/reference/oil","oilLibrary",<ExperimentOutlined/>),
+      item("/app/reference/port","portManagement",<EnvironmentOutlined/>),
+      item("/app/reference/salesperson","salespersonManagement",<IdcardOutlined/>),
+    ]},
+    ...(user.role === "admin" ? [item("/app/users", "users", <TeamOutlined />)] : []),
+    item("/app/company", "settings", <SettingOutlined />),
+    item("/app/security", "security", <SafetyOutlined />),
   ];
   return (
     <div className="workspace">
@@ -52,11 +62,8 @@ export default function Workspace() {
         <Menu
           theme="dark"
           selectedKeys={[location.pathname]}
-          items={menu.map(([path, label, icon]) => ({
-            key: String(path),
-            icon,
-            label: <Link to={String(path)}>{t(String(label))}</Link>,
-          }))}
+          defaultOpenKeys={["reference-root"]}
+          items={menu}
         />
         <div className="sidebar-foot">
           <span className="status-dot" />
@@ -142,7 +149,7 @@ export function Overview() {
                 <Tag color="cyan">{t("ready")}</Tag>
                 <h2>{t("nextTitle")}</h2>
                 <p>{t("nextCopy")}</p>
-                <Link to="/app/reference">
+                <Link to="/app/reference/customer">
                   <Button type="primary" icon={<ArrowRightOutlined />}>
                     {t("manageReference")}
                   </Button>

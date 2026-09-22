@@ -11,18 +11,24 @@ import {
   Table,
   Tabs,
   Tag,
+  Tooltip,
   App,
 } from "antd";
-import { PlusOutlined } from "@ant-design/icons";
+import { EditOutlined, PlusOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
+import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { api } from "./api";
 import type { Reference } from "./api";
 import { ErrorBox, Language } from "./components";
 export default function References() {
-  const { t, i18n } = useTranslation(),
-    { message } = App.useApp();
-  const [kind, setKind] = useState("customer"),
-    [rows, setRows] = useState<Reference[]>([]),
+  const { t } = useTranslation(),
+    { message } = App.useApp(),
+    navigate = useNavigate(),
+    { kind: paramKind } = useParams();
+  const kinds = ["customer", "supplier", "oil", "port", "salesperson"] as const;
+  const validKind = kinds.includes(paramKind as (typeof kinds)[number]);
+  const kind = (validKind ? paramKind : "customer") as (typeof kinds)[number];
+  const [rows, setRows] = useState<Reference[]>([]),
     [query, setQuery] = useState(""),
     [error, setError] = useState(""),
     [formError, setFormError] = useState(""),
@@ -52,22 +58,45 @@ export default function References() {
     form.setFieldsValue(row || { is_active: true });
   };
   const visible = rows.filter((r) =>
-    [r.name, r.name_en, r.code].some((s) =>
+    [r.name, r.code || ""].some((s) =>
       s.toLowerCase().includes(query.toLowerCase()),
     ),
   );
+  if (!validKind) return <Navigate to="/app/reference/customer" replace />;
+  const titles = {
+    customer: "customerManagement",
+    supplier: "supplierManagement",
+    oil: "oilLibrary",
+    port: "portManagement",
+    salesperson: "salespersonManagement",
+  } as const;
   return (
     <>
       <div className="page-heading">
-        <h1>{t("references")}</h1>
-        <p>{t("referenceCopy")}</p>
+        <div className="eyebrow">{t("references")}</div>
+        <h1>{t(titles[kind])}</h1>
+        <p>{t(`${kind}ReferenceCopy`)}</p>
+      </div>
+      <div className="reference-summary">
+        <Card>
+          <span>{t("totalRecords")}</span>
+          <strong>{rows.length}</strong>
+        </Card>
+        <Card>
+          <span>{t("activeRecords")}</span>
+          <strong>{rows.filter((row) => row.is_active).length}</strong>
+        </Card>
+        <Card>
+          <span>{t("inactiveRecords")}</span>
+          <strong>{rows.filter((row) => !row.is_active).length}</strong>
+        </Card>
       </div>
       <Card>
         <Tabs
           activeKey={kind}
           onChange={(k) => {
-            setKind(k);
             setQuery("");
+            navigate(`/app/reference/${k}`);
           }}
           items={["customer", "supplier", "oil", "port", "salesperson"].map(
             (k) => ({ key: k, label: t(k) }),
@@ -99,13 +128,9 @@ export default function References() {
             { title: t("code"), dataIndex: "code", width: 150 },
             {
               title: t("name"),
-              render: (_, r) => (
-                <strong>
-                  {i18n.language === "en" ? r.name_en || r.name : r.name}
-                </strong>
-              ),
+              dataIndex: "name",
+              render: (name: string) => <strong>{name}</strong>,
             },
-            { title: t("contactField"), dataIndex: "contact" },
             {
               title: t("is_active"),
               render: (_, r) => (
@@ -118,9 +143,14 @@ export default function References() {
               title: t("actions"),
               width: 90,
               render: (_, r) => (
-                <Button type="link" onClick={() => open(r)}>
-                  {t("edit")}
-                </Button>
+                <Tooltip title={t("edit")}>
+                  <Button
+                    type="text"
+                    aria-label={t("edit")}
+                    icon={<EditOutlined />}
+                    onClick={() => open(r)}
+                  />
+                </Tooltip>
               ),
             },
           ]}
@@ -162,15 +192,6 @@ export default function References() {
           }}
         >
           <Form.Item
-            name="code"
-            label={t("code")}
-            rules={[
-              { required: true, whitespace: true, message: t("required") },
-            ]}
-          >
-            <Input maxLength={40} />
-          </Form.Item>
-          <Form.Item
             name="name"
             label={t("name")}
             rules={[
@@ -178,17 +199,6 @@ export default function References() {
             ]}
           >
             <Input maxLength={120} />
-          </Form.Item>
-          {["oil", "port"].includes(kind) && (
-            <Form.Item name="name_en" label={t("name_en")}>
-              <Input maxLength={160} />
-            </Form.Item>
-          )}
-          <Form.Item name="contact" label={t("contactField")}>
-            <Input maxLength={160} />
-          </Form.Item>
-          <Form.Item name="note" label={t("note")}>
-            <Input.TextArea maxLength={1000} rows={3} />
           </Form.Item>
           <Form.Item
             name="is_active"

@@ -1,6 +1,7 @@
 import uuid
 from django.conf import settings
 from django.db import models
+from core.models import Reference
 
 
 class WriteLock(models.Model):
@@ -20,8 +21,12 @@ class Mutation(models.Model):
 
 
 class Account(models.Model):
+    CURRENCIES = [('USD', 'USD'), ('CNY', 'CNY'), ('HKD', 'HKD'), ('SGD', 'SGD'), ('EUR', 'EUR')]
+    TYPES = [('bank', 'Bank account'), ('cash', 'Cash'), ('other', 'Other')]
+
     name = models.CharField(max_length=120, unique=True)
-    currency = models.CharField(max_length=3, default='USD')
+    account_type = models.CharField(max_length=12, choices=TYPES, default='bank')
+    currency = models.CharField(max_length=3, choices=CURRENCIES, default='USD')
     opening_balance = models.DecimalField(max_digits=18, decimal_places=2, default=0)
     is_default = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
@@ -31,9 +36,8 @@ class Account(models.Model):
     class Meta:
         ordering = ['id']
         constraints = [
-            models.CheckConstraint(condition=models.Q(currency='USD'), name='trading_account_usd'),
             models.CheckConstraint(condition=models.Q(opening_balance__gte=0), name='trading_opening_nonnegative'),
-            models.UniqueConstraint(fields=['currency'], condition=models.Q(is_default=True), name='trading_default_currency'),
+            models.UniqueConstraint(fields=['is_default'], condition=models.Q(is_default=True), name='trading_single_default_account'),
         ]
 
 
@@ -41,9 +45,12 @@ class Order(models.Model):
     public_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     order_date = models.DateField()
     customer = models.CharField(max_length=160)
+    customer_reference = models.ForeignKey(Reference, related_name='customer_orders', null=True, blank=True, on_delete=models.PROTECT)
     supplier = models.CharField(max_length=160)
+    supplier_reference = models.ForeignKey(Reference, related_name='supplier_orders', null=True, blank=True, on_delete=models.PROTECT)
     vessel = models.CharField(max_length=160)
     port = models.CharField(max_length=160)
+    port_reference = models.ForeignKey(Reference, related_name='port_orders', null=True, blank=True, on_delete=models.PROTECT)
     imo = models.CharField(max_length=40, blank=True)
     estimated_start_date = models.DateField(null=True, blank=True)
     estimated_end_date = models.DateField(null=True, blank=True)
@@ -55,13 +62,14 @@ class Order(models.Model):
     commission_rate = models.DecimalField(max_digits=12, decimal_places=4, default=0)
     commission_recipient = models.CharField(max_length=160, blank=True)
     salesperson = models.CharField(max_length=160, blank=True)
+    salesperson_reference = models.ForeignKey(Reference, related_name='salesperson_orders', null=True, blank=True, on_delete=models.PROTECT)
     customer_fee = models.DecimalField(max_digits=18, decimal_places=2, default=0)
     supplier_fee = models.DecimalField(max_digits=18, decimal_places=2, default=0)
     berth_fee = models.DecimalField(max_digits=18, decimal_places=2, default=0)
     exceptional_fee = models.DecimalField(max_digits=18, decimal_places=2, default=0)
     note = models.CharField(max_length=2000, blank=True)
     currency = models.CharField(max_length=3, default='USD')
-    state = models.CharField(max_length=8, default='active', choices=[('active', 'Active'), ('void', 'Void'), ('deleted', 'Deleted')])
+    state = models.CharField(max_length=8, default='active', choices=[('draft', 'Draft'), ('active', 'Active'), ('void', 'Void'), ('deleted', 'Deleted')])
     version = models.PositiveIntegerField(default=1)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -78,6 +86,7 @@ class OrderLine(models.Model):
     order = models.ForeignKey(Order, related_name='lines', on_delete=models.CASCADE)
     position = models.PositiveSmallIntegerField()
     oil = models.CharField(max_length=160)
+    oil_reference = models.ForeignKey(Reference, related_name='order_lines', null=True, blank=True, on_delete=models.PROTECT)
     ordered_qty_min = models.DecimalField(max_digits=12, decimal_places=3)
     ordered_qty_max = models.DecimalField(max_digits=12, decimal_places=3)
     actual_qty = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)

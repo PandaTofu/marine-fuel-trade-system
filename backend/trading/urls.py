@@ -20,4 +20,5 @@ urlpatterns = [
     path('ledger/export/',views.ledger_export),
     path('ledger/<int:pk>/reverse/',views.ledger_reverse),
     path('dashboard/',views.dashboard),
+    path('forecast/',views.forecast),
 ]

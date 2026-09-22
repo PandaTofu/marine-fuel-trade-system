@@ -17,7 +17,7 @@ from django.db import close_old_connections
 from django.test import TestCase, SimpleTestCase, TransactionTestCase, skipUnlessDBFeature
 from django.utils import timezone
 from rest_framework.test import APIClient
-from core.models import User
+from core.models import Reference, User
 from .calculations import state, totals, order_numbers
 from .models import Account, Entry, Mutation, Order, OrderRevision, WriteLock
 from .services import account_balance
@@ -123,6 +123,37 @@ class TradingTests(TestCase):
         self.assertEqual(set(Entry.objects.values_list('date',flat=True)),{row.order_date})
         self.assertEqual(account_balance(self.account),Decimal('1100000.00'))
 
+    def test_order_links_master_data_and_keeps_name_snapshots(self):
+        customer=Reference.objects.create(kind='customer',code='CUS-001',name='数据库客户')
+        supplier=Reference.objects.create(kind='supplier',code='SUP-001',name='数据库供应商')
+        port=Reference.objects.create(kind='port',code='POR-001',name='Shanghai')
+        salesperson=Reference.objects.create(kind='salesperson',code='SAL-001',name='张三')
+        oil=Reference.objects.create(kind='oil',code='OIL-001',name='VLSFO 0.5%')
+        payload=order_payload()
+        payload.update(customer='会被资料名称覆盖',customer_reference=customer.pk,
+                       supplier='会被资料名称覆盖',supplier_reference=supplier.pk,
+                       port='会被资料名称覆盖',port_reference=port.pk,
+                       salesperson='会被资料名称覆盖',salesperson_reference=salesperson.pk)
+        payload['lines'][0].update(oil='会被资料名称覆盖',oil_reference=oil.pk)
+        order=self.create_order(payload)
+        row=Order.objects.get(pk=order['id'])
+        self.assertEqual((row.customer_reference_id,row.supplier_reference_id,row.port_reference_id,row.salesperson_reference_id),(customer.pk,supplier.pk,port.pk,salesperson.pk))
+        self.assertEqual((row.customer,row.supplier,row.port,row.salesperson),(customer.name,supplier.name,port.name,salesperson.name))
+        first_line=row.lines.get(position=0)
+        self.assertEqual((first_line.oil_reference_id,first_line.oil),(oil.pk,oil.name))
+        self.assertEqual(order['customer_reference'],customer.pk)
+        self.assertEqual(order['lines'][0]['oil_reference'],oil.pk)
+
+    def test_order_rejects_reference_of_wrong_kind_and_allows_manual_names(self):
+        oil=Reference.objects.create(kind='oil',code='OIL-WRONG',name='Not a customer')
+        invalid=dict(order_payload(),customer_reference=oil.pk)
+        response=self.write('orders/',invalid)
+        self.assertEqual(response.status_code,400)
+        self.assertEqual(str(response.data['customer_reference'][0]),'reference_kind')
+        manual=self.create_order(order_payload())
+        self.assertIsNone(manual['customer_reference'])
+        self.assertIsNone(manual['lines'][0]['oil_reference'])
+
     def test_estimated_supply_range_and_exceptional_fee(self):
         payload=order_payload()
         payload.update(estimated_start_date='2026-09-10',estimated_end_date='2026-09-12',exceptional_fee='350.00')
@@ -144,6 +175,18 @@ class TradingTests(TestCase):
         self.assertEqual(response.status_code,400)
         self.assertEqual(response.json()['code'],'account_required')
         self.assertFalse(Order.objects.exists())
+        self.assertFalse(Entry.objects.exists())
+
+    def test_draft_saves_without_account_and_confirms_without_posting(self):
+        Account.objects.all().delete()
+        payload=order_payload()
+        payload.update(save_as_draft=True)
+        draft=self.create_order(payload)
+        self.assertEqual(draft['state'],'draft')
+        self.assertFalse(Entry.objects.exists())
+        confirmed=self.write(f"orders/{draft['id']}/",{'version':draft['version'],'save_as_draft':False},method='patch')
+        self.assertEqual(confirmed.status_code,200,confirmed.data)
+        self.assertEqual(confirmed.json()['state'],'active')
         self.assertFalse(Entry.objects.exists())
 
     def test_fee_net_receipt_does_not_deduct_cash_twice(self):
@@ -357,21 +400,68 @@ class TradingTests(TestCase):
         response=self.write('accounts/',{'name':'New default','opening_balance':'100.00','is_default':True})
         self.assertEqual(response.status_code,201,response.data)
         second=response.json();self.account.refresh_from_db()
+        self.assertTrue(self.account.is_default)
+        self.assertFalse(second['is_default'])
+        response=self.write(f"accounts/{second['id']}/",{'version':second['version'],'is_default':True},method='patch')
+        self.assertEqual(response.status_code,200,response.data)
+        second=response.json();self.account.refresh_from_db()
         self.assertFalse(self.account.is_default)
         self.assertEqual(Account.objects.filter(is_default=True).count(),1)
         self.settle(self.create_order(),customer_received='10')
         response=self.write(f"accounts/{second['id']}/",{'version':second['version'],'opening_balance':'200'},method='patch')
         self.assertEqual(response.json()['code'],'opening_locked')
         self.assertEqual(self.write(f"accounts/{second['id']}/",{'version':second['version']}).json()['code'],'account_has_entries')
-        self.assertEqual(self.write('accounts/',{'name':'CNY','currency':'CNY'}).status_code,400)
+        response=self.write('accounts/',{'name':'CNY cash','account_type':'cash','currency':'CNY','opening_balance':'200.00'})
+        self.assertEqual(response.status_code,201,response.data)
+        self.assertEqual(response.json()['account_type'],'cash')
+        self.assertEqual(response.json()['currency'],'CNY')
+        self.assertFalse(response.json()['is_default'])
+        self.assertEqual(Account.objects.filter(is_default=True).count(),1)
+        response=self.client.get('/api/trading/accounts/').json()
+        self.assertEqual(response['totals_by_currency']['CNY'],'200.00')
+        cny=Account.objects.get(name='CNY cash')
+        response=self.write(f"accounts/{cny.pk}/",{'version':cny.version,'is_default':True},method='patch')
+        self.assertEqual(response.status_code,200,response.data)
+        self.assertEqual(Account.objects.filter(is_default=True).count(),1)
+        self.assertTrue(Account.objects.get(pk=cny.pk).is_default)
+        order=self.create_order()
+        response=self.write(f"orders/{order['id']}/settlement/",{'version':order['version'],'account_id':cny.pk,'customer_received':'10'})
+        self.assertEqual(response.json()['code'],'account_currency_mismatch')
         self.client.force_authenticate(self.operator)
         self.assertEqual(self.write('accounts/',{'name':'Forbidden'}).status_code,403)
         order=self.create_order()
         self.assertEqual(self.write(f"orders/{order['id']}/delete/",{'version':1,'reason':'Forbidden'}).status_code,403)
         self.assertEqual(self.client.get('/api/trading/accounts/').status_code,200)
         self.client.force_authenticate(None)
-        for path in ['orders/','accounts/','ledger/','ledger/export/','dashboard/']:
+        for path in ['orders/','accounts/','ledger/','ledger/export/','dashboard/','forecast/']:
             self.assertEqual(self.client.get('/api/trading/'+path).status_code,403,path)
+
+    def test_account_reconciliation_is_derived_from_persisted_ledger(self):
+        order=self.create_order()
+        self.settle(order,customer_received='100.00',supplier_paid='40.00')
+        data=self.client.get('/api/trading/accounts/').json()['results'][0]
+        self.assertEqual(data['opening_balance'],'1000000.00')
+        self.assertEqual(data['ledger_income'],'100.00')
+        self.assertEqual(data['ledger_expense'],'40.00')
+        self.assertEqual(data['expected_balance'],'1000060.00')
+        self.assertEqual(data['balance'],'1000060.00')
+        self.assertEqual(data['opening_difference'],'0.00')
+        self.assertTrue(data['reconciled'])
+
+    def test_cash_forecast_uses_open_database_balances_without_posting(self):
+        order=self.create_order()
+        before_entries=Entry.objects.count()
+        response=self.client.get('/api/trading/forecast/',{'cutoff':(timezone.localdate()+timedelta(days=40)).isoformat()})
+        self.assertEqual(response.status_code,200,response.data)
+        data=response.json()
+        self.assertEqual(data['current_balance'],'1000000.00')
+        self.assertEqual({row['side'] for row in data['results']},{'customer','supplier'})
+        customer=next(row for row in data['results'] if row['side']=='customer')
+        supplier=next(row for row in data['results'] if row['side']=='supplier')
+        self.assertEqual(customer['amount'],'909900.00')
+        self.assertEqual(supplier['amount'],'850000.00')
+        self.assertEqual(Entry.objects.count(),before_entries)
+        self.assertEqual(Order.objects.get(pk=order['id']).version,order['version'])
 
     def test_first_account_is_default_and_inactive_account_not_postable(self):
         Account.objects.all().delete()

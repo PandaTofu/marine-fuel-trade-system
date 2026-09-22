@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from django.http import HttpResponse
 from django.db.models import Q
@@ -189,10 +189,13 @@ def accounts(request):
     if request.method == 'POST':
         return Response(command(request, 'account.create', lambda: save_account(request.user, request.data)),status=201)
     rows=[account_data(row) for row in Account.objects.prefetch_related('entries')]
-    total=sum((Decimal(row['balance']) for row in rows),ZERO)
+    totals = {}
     for row in rows:
-        row['share']=text(Decimal(row['balance'])/total*100) if total>0 else None
-    return Response({'results':rows,'total_balance':text(total),'count':len(rows),'currency':'USD'})
+        totals[row['currency']] = totals.get(row['currency'], ZERO) + Decimal(row['balance'])
+    for row in rows:
+        currency_total = totals[row['currency']]
+        row['share']=text(Decimal(row['balance'])/currency_total*100) if currency_total>0 else None
+    return Response({'results':rows,'totals_by_currency':{key:text(value) for key,value in totals.items()},'total_balance':text(totals.get('USD', ZERO)),'count':len(rows)})
 
 
 @api_view(['PATCH','POST'])
@@ -240,10 +243,48 @@ def dashboard(request):
     month=timezone.localdate().strftime('%Y-%m')
     monthly=summary([row for row in rows if row['order_date'].startswith(month)])
     result.update(month_order_count=monthly['order_count'],month_profit=monthly['profit'])
-    result['total_balance']=text(sum((account_balance(account) for account in Account.objects.prefetch_related('entries')),ZERO))
+    result['total_balance']=text(sum((account_balance(account) for account in Account.objects.filter(currency='USD').prefetch_related('entries')),ZERO))
     result['account_count']=Account.objects.count()
     result['overdue']=[row for row in rows if 'overdue' in [row['numbers']['customer_status'],row['numbers']['supplier_status']]]
     return Response(result)
+
+
+@api_view(['GET'])
+def forecast(request):
+    try:
+        cutoff = date.fromisoformat(request.query_params.get('cutoff', '')) if request.query_params.get('cutoff') else timezone.localdate() + timedelta(days=30)
+    except ValueError:
+        raise BusinessError('invalid')
+    today = timezone.localdate()
+    rows = []
+    for order in order_rows({}):
+        if order['state'] != 'active' or not order['actual_date']:
+            continue
+        if request.query_params.get('customer') and request.query_params['customer'].lower() not in order['customer'].lower():
+            continue
+        if request.query_params.get('supplier') and request.query_params['supplier'].lower() not in order['supplier'].lower():
+            continue
+        if request.query_params.get('oil') and not any(request.query_params['oil'].lower() in line['oil'].lower() for line in order['lines']):
+            continue
+        for side, amount_key, due_key, party_key in [('customer', 'receivable', 'customer_due', 'customer'), ('supplier', 'payable', 'supplier_due', 'supplier')]:
+            amount = Decimal(order['numbers'][amount_key])
+            due_text = order['numbers'][due_key]
+            if amount <= 0 or not due_text:
+                continue
+            expected = date.fromisoformat(due_text)
+            overdue = expected < today
+            scope = request.query_params.get('scope')
+            if scope == 'overdue' and not overdue:
+                continue
+            if scope == 'not_due' and overdue:
+                continue
+            if expected > cutoff:
+                continue
+            rows.append({'key': f"{order['id']}:{side}", 'order_id': order['id'], 'number': order['number'], 'side': side,
+                         'counterparty': order[party_key], 'vessel': order['vessel'], 'oils': ' / '.join(line['oil'] for line in order['lines']),
+                         'amount': text(amount), 'due_date': due_text, 'expected_date': due_text, 'status': 'overdue' if overdue else 'not_due'})
+    current = sum((account_balance(account) for account in Account.objects.filter(currency='USD').prefetch_related('entries')), ZERO)
+    return Response({'cutoff': cutoff.isoformat(), 'current_balance': text(current), 'results': rows})
 
 
 @api_view(['GET'])

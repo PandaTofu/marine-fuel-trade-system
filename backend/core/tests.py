@@ -113,9 +113,10 @@ class FoundationTests(TestCase):
     def test_all_reference_kinds_persist_filter_and_deactivate(self):
         c = self.client_for('operator')
         for kind,_ in Reference.KINDS:
-            response = c.post('/api/reference/',{'kind':kind,'code':'001','name':'测试资料','name_en':'Test record'},format='json')
+            response = c.post('/api/reference/',{'kind':kind,'name':'测试资料'},format='json')
             self.assertEqual(response.status_code,201)
             pk = response.json()['id']
+            self.assertRegex(response.json()['code'], r'^[A-Z]{3}-\d{6}$')
             self.assertEqual(c.get('/api/reference/?kind='+kind).json()[0]['id'],pk)
             self.assertEqual(c.patch(f'/api/reference/{pk}/',{'is_active':False},format='json').status_code,200)
             self.assertFalse(Reference.objects.get(pk=pk).is_active)
@@ -125,22 +126,28 @@ class FoundationTests(TestCase):
 
     def test_duplicate_reference_and_validation(self):
         c = self.client_for()
-        payload={'kind':'oil','code':'001','name':'MGO'}
+        payload={'kind':'oil','name':'MGO'}
         self.assertEqual(c.post('/api/reference/',payload,format='json').status_code,201)
         self.assertEqual(c.post('/api/reference/',payload,format='json').status_code,400)
-        self.assertEqual(c.post('/api/reference/',{'kind':'unknown','code':'x','name':'x'},format='json').status_code,400)
+        self.assertEqual(c.post('/api/reference/',{'kind':'unknown','name':'x'},format='json').status_code,400)
 
     def test_audit_failure_rolls_back_reference(self):
         c = self.client_for()
         with patch('core.views.audit',side_effect=RuntimeError('test atomic rollback')):
             with self.assertRaises(RuntimeError):
-                c.post('/api/reference/',{'kind':'oil','code':'FAIL','name':'Rollback'},format='json')
-        self.assertFalse(Reference.objects.filter(code='FAIL').exists())
+                c.post('/api/reference/',{'kind':'oil','name':'Rollback'},format='json')
+        self.assertFalse(Reference.objects.filter(name='Rollback').exists())
 
     def test_company_and_language_persistence(self):
         c = self.client_for()
         self.assertEqual(c.patch('/api/company/',{'name':'测试公司','invoice_prefix':'BD'},format='json').status_code,200)
         self.assertEqual(Company.objects.get(pk=1).name,'测试公司')
+
+    def test_company_invoice_defaults(self):
+        company = Company()
+        self.assertEqual(company.name, 'Bond Shipping and Trading Limited')
+        self.assertEqual(company.email, 'bunker@bond-shipping.com')
+        self.assertIn('HANGWAI IND CTR', company.address)
         self.assertEqual(c.post('/api/auth/language/',{'language':'en'},format='json').status_code,200)
         self.assertEqual(c.get('/api/auth/me/').json()['language'],'en')
         self.assertEqual(c.post('/api/auth/language/',{'language':'invalid'},format='json').status_code,400)
