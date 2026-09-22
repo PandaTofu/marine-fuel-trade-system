@@ -388,6 +388,28 @@ export function OrderEditor({
                   {(fields, { add, remove }, meta) => (
                     <>
                       <div className="order-lines">
+                        <div className="order-line-header">
+                          <div className="required-column">
+                            {productLabel(t("biz.oilName"))}
+                          </div>
+                          <div className="required-column">
+                            {productLabel(t("biz.orderQuantity"), "MT")}
+                          </div>
+                          <div>
+                            {productLabel(t("biz.actualQuantity"), "MT")}
+                          </div>
+                          <div className="required-column">
+                            {productLabel(t("biz.saleUnitPrice"), "USD/MT")}
+                          </div>
+                          <div>{productLabel(t("biz.saleAmount"), "USD")}</div>
+                          <div className="required-column">
+                            {productLabel(t("biz.supplierCostPrice"), "USD/MT")}
+                          </div>
+                          <div>
+                            {productLabel(t("biz.supplierCostAmount"), "USD")}
+                          </div>
+                          <div />
+                        </div>
                         {fields.map((field, index) => (
                           <div className="order-line" key={field.key}>
                             <Form.Item
@@ -398,7 +420,6 @@ export function OrderEditor({
                             </Form.Item>
                             <Form.Item
                               name={[field.name, "oil"]}
-                              label={productLabel(t("biz.oilName"))}
                               rules={required}
                             >
                               <ReferenceInput
@@ -411,10 +432,7 @@ export function OrderEditor({
                                 }
                               />
                             </Form.Item>
-                            <Form.Item
-                              label={productLabel(t("biz.orderQuantity"), "MT")}
-                              required
-                            >
+                            <Form.Item>
                               <div className="quantity-range-inputs">
                                 <Form.Item
                                   name={[field.name, "ordered_qty_min"]}
@@ -466,46 +484,25 @@ export function OrderEditor({
                                 </Form.Item>
                               </div>
                             </Form.Item>
-                            <Form.Item
-                              name={[field.name, "actual_qty"]}
-                              label={productLabel(
-                                t("biz.actualQuantity"),
-                                "MT",
-                              )}
-                            >
+                            <Form.Item name={[field.name, "actual_qty"]}>
                               <MoneyInput compact precision={3} />
                             </Form.Item>
                             <Form.Item
                               name={[field.name, "sale_price"]}
-                              label={productLabel(
-                                t("biz.saleUnitPrice"),
-                                "USD/MT",
-                              )}
                               rules={required}
                             >
                               <MoneyInput compact precision={4} />
                             </Form.Item>
-                            <Form.Item
-                              label={productLabel(t("biz.saleAmount"), "USD")}
-                            >
+                            <Form.Item>
                               {calculated(lineAmounts[index]?.sale || 0n)}
                             </Form.Item>
                             <Form.Item
                               name={[field.name, "cost_price"]}
-                              label={productLabel(
-                                t("biz.supplierCostPrice"),
-                                "USD/MT",
-                              )}
                               rules={required}
                             >
                               <MoneyInput compact precision={4} />
                             </Form.Item>
-                            <Form.Item
-                              label={productLabel(
-                                t("biz.supplierCostAmount"),
-                                "USD",
-                              )}
-                            >
+                            <Form.Item>
                               {calculated(lineAmounts[index]?.cost || 0n, true)}
                             </Form.Item>
                             <Tooltip title={t("biz.removeLine")}>
