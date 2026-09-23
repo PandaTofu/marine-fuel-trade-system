@@ -69,7 +69,7 @@ class Order(models.Model):
     exceptional_fee = models.DecimalField(max_digits=18, decimal_places=2, default=0)
     note = models.CharField(max_length=2000, blank=True)
     currency = models.CharField(max_length=3, default='USD')
-    state = models.CharField(max_length=8, default='active', choices=[('draft', 'Draft'), ('active', 'Active'), ('void', 'Void'), ('deleted', 'Deleted')])
+    state = models.CharField(max_length=12, default='confirmed', choices=[('draft', 'Draft'), ('confirmed', 'Confirmed'), ('supplied', 'Supplied'), ('completed', 'Completed'), ('void', 'Void'), ('deleted', 'Deleted')])
     version = models.PositiveIntegerField(default=1)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

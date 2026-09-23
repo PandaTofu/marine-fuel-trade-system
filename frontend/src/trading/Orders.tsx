@@ -44,7 +44,7 @@ export default function Orders({
   const { t } = useTranslation();
   const { user } = useAuth();
   const [filters, setFilters] = useState<Record<string, unknown>>(
-      settlements ? { state: "active" } : {},
+      settlements ? { state: "financial" } : {},
     ),
     [page, setPage] = useState(1),
     [selected, setSelected] = useState<Order[]>([]);
@@ -130,18 +130,20 @@ export default function Orders({
       fixed: "right",
       render: (_: unknown, o: Order) => (
         <div className="order-row-actions">
-          {o.state === "active" &&
+          {["confirmed", "supplied", "completed"].includes(o.state) &&
             (settlements ? (
               <Space size={6}>
                 <Button
                   size="small"
                   type="primary"
+                  disabled={!['admin', 'finance'].includes(user?.role || '')}
                   onClick={() => setPayment({ order: o, refund: false })}
                 >
                   {t("biz.recordPayment")}
                 </Button>
                 <Button
                   size="small"
+                  disabled={!['admin', 'finance'].includes(user?.role || '')}
                   onClick={() => setPayment({ order: o, refund: true })}
                 >
                   {t("biz.refundAction")}
@@ -183,6 +185,10 @@ export default function Orders({
                   trigger={["click"]}
                   menu={{
                     onClick: async ({ key }) => {
+                      if (key === "void-order") {
+                        setClosing({ action: "void", rows: [o] });
+                        return;
+                      }
                       if (
                         key === "export-contract" ||
                         key === "issue-invoice"
@@ -199,6 +205,16 @@ export default function Orders({
                       }
                     },
                     items: [
+                      ...(user?.role === "admin"
+                        ? [
+                            {
+                              key: "void-order",
+                              icon: <DeleteOutlined />,
+                              label: t("biz.voidAction"),
+                              danger: true,
+                            },
+                          ]
+                        : []),
                       {
                         key: "export-order",
                         icon: <FileExcelOutlined />,
@@ -261,7 +277,7 @@ export default function Orders({
               </Tooltip>
             </Space>
           )}
-          {o.state !== "active" && <Status value={o.state} />}
+          {!settlements && <Status value={o.state} />}
         </div>
       ),
     },
@@ -302,7 +318,7 @@ export default function Orders({
           form={filterForm}
           layout="inline"
           className="business-filters"
-          initialValues={settlements ? { state: "active" } : {}}
+          initialValues={settlements ? { state: "financial" } : {}}
           onFinish={(values) => {
             setFilters(values);
             setPage(1);
@@ -329,9 +345,11 @@ export default function Orders({
             <Select
               allowClear
               style={{ width: 140 }}
-              options={["draft", "active", "pending", "fulfilled", "void"].map(
-                (value) => ({ value, label: t(`biz.${value}`) }),
-              )}
+              options={(
+                settlements
+                  ? ["financial", "confirmed", "supplied", "completed"]
+                  : ["draft", "confirmed", "supplied", "completed", "void"]
+              ).map((value) => ({ value, label: t(`biz.${value}`) }))}
             />
           </Form.Item>
           {["customer_status", "supplier_status"].map((key) => (
@@ -370,8 +388,11 @@ export default function Orders({
             <Button
               onClick={() => {
                 filterForm.resetFields();
-                filterForm.setFieldValue("state", undefined);
-                setFilters({});
+                filterForm.setFieldValue(
+                  "state",
+                  settlements ? "financial" : undefined,
+                );
+                setFilters(settlements ? { state: "financial" } : {});
                 setPage(1);
                 setSelected([]);
               }}
@@ -427,7 +448,14 @@ export default function Orders({
             ? {
                 selectedRowKeys: selected.map((o) => o.id),
                 onChange: (_, rows) => setSelected(rows),
-                getCheckboxProps: (o) => ({ disabled: o.state !== "active" }),
+                getCheckboxProps: (o) => ({
+                  disabled: ![
+                    "draft",
+                    "confirmed",
+                    "supplied",
+                    "completed",
+                  ].includes(o.state),
+                }),
               }
             : undefined
         }

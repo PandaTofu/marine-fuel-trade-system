@@ -45,7 +45,7 @@ export interface User {
   id: number;
   username: string;
   first_name: string;
-  role: "admin" | "operator";
+  role: "admin" | "operator" | "finance";
   language: "zh-CN" | "en";
   is_active: boolean;
   must_change_password: boolean;

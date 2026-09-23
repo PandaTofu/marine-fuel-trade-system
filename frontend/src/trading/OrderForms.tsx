@@ -22,6 +22,7 @@ import {
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { useTranslation } from "react-i18next";
+import { useAuth } from "../auth";
 import { api } from "../api";
 import { ErrorBox, Language } from "../components";
 import { useLocaleValidation } from "../useLocaleValidation";
@@ -352,12 +353,14 @@ export function OrderEditor({
                     rules={required}
                   >
                     <Select
-                      disabled={!!order && order.state === "active"}
-                      options={["draft", "active"].map((value) => ({
+                      disabled={!!order && order.state !== "draft"}
+                      options={(
+                        order
+                          ? ["draft", "confirmed", "supplied", "completed"]
+                          : ["draft", "confirmed"]
+                      ).map((value) => ({
                         value,
-                        label: t(
-                          `biz.${value === "active" ? "confirmed" : value}`,
-                        ),
+                        label: t(`biz.${value}`),
                       }))}
                     />
                   </Form.Item>
@@ -1015,6 +1018,7 @@ export function OrderDetail({
   onChanged: (order: Order) => void;
 }) {
   const { t } = useTranslation();
+  const { user } = useAuth();
   const revisions = useResource<Revision[]>(
     `trading/orders/${order.id}/history/`,
   );
@@ -1079,13 +1083,7 @@ export function OrderDetail({
                       </span>
                       <strong>
                         {key === "state" ? (
-                          <Status
-                            value={
-                              snapshot.state === "active"
-                                ? "confirmed"
-                                : snapshot.state
-                            }
-                          />
+                          <Status value={snapshot.state} />
                         ) : (
                           String(
                             (snapshot as unknown as Record<string, unknown>)[
@@ -1138,7 +1136,12 @@ export function OrderDetail({
                 <div className="business-toolbar">
                   <Button
                     type="primary"
-                    disabled={order.state !== "active"}
+                    disabled={
+                      !["admin", "finance"].includes(user?.role || "") ||
+                      !["confirmed", "supplied", "completed"].includes(
+                        order.state,
+                      )
+                    }
                     onClick={() => setPayment(true)}
                   >
                     {t("biz.recordPayment")}

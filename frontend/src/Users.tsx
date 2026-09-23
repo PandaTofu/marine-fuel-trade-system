@@ -172,7 +172,7 @@ export default function Users() {
               <Form.Item name="role" label={t("role")}>
                 <Select
                   disabled={target?.id === user.id}
-                  options={["admin", "operator"].map((k) => ({
+                  options={["admin", "operator", "finance"].map((k) => ({
                     value: k,
                     label: t(k),
                   }))}

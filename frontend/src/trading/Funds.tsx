@@ -588,9 +588,11 @@ function Ledger({ onChanged }: { onChanged: () => void }) {
         />
       )}
       <div className="business-toolbar">
-        <Button type="primary" onClick={() => setEditor(true)}>
-          {t("biz.manualEntry")}
-        </Button>
+        {["admin", "finance"].includes(user?.role || "") && (
+          <Button type="primary" onClick={() => setEditor(true)}>
+            {t("biz.manualEntry")}
+          </Button>
+        )}
         <Space>
           <Select
             aria-label={t("biz.exportLanguage")}

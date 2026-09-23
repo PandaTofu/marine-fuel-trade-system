@@ -245,13 +245,17 @@ export function Status({ value }: { value: string }) {
       color={
         value === "overdue"
           ? "red"
-          : value === "settled"
+          : value === "settled" || value === "completed"
             ? "green"
-            : value === "partial"
-              ? "gold"
-              : value === "pending"
+            : value === "supplied"
+              ? "cyan"
+              : value === "confirmed"
                 ? "blue"
-                : "default"
+                : value === "partial"
+                  ? "gold"
+                  : value === "pending"
+                    ? "blue"
+                    : "default"
       }
     >
       {t(`biz.${value}`)}

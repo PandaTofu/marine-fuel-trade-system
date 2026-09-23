@@ -4,6 +4,8 @@ from django.utils import timezone
 
 ZERO = Decimal('0.00')
 COMPONENTS = ('customer_deposit', 'customer_received', 'supplier_deposit', 'supplier_paid')
+FINANCIAL_ORDER_STATES = ('confirmed', 'supplied', 'completed')
+EXCLUDED_ORDER_STATES = ('draft', 'void', 'deleted')
 
 
 def money(value):
@@ -24,8 +26,8 @@ def totals(lines, commission_rate=0, customer_fee=0, supplier_fee=0, berth_fee=0
             'profit': sales - cost - commission - Decimal(customer_fee) - Decimal(supplier_fee) - Decimal(berth_fee) - Decimal(exceptional_fee)}
 
 
-def state(balance, received, due, actual_date, lifecycle='active', today=None):
-    if lifecycle != 'active':
+def state(balance, received, due, actual_date, lifecycle='confirmed', today=None):
+    if lifecycle in EXCLUDED_ORDER_STATES:
         return lifecycle
     if not actual_date:
         return 'pending'
@@ -46,7 +48,8 @@ def settlement_totals(entries):
 
 def order_numbers(order, entries=None):
     result = totals(order.lines.all(), order.commission_rate, order.customer_fee, order.supplier_fee, order.berth_fee, order.exceptional_fee)
-    paid = settlement_totals(order.entries.all() if entries is None else entries)
+    paid = ({key: ZERO for key in COMPONENTS} if order.state in EXCLUDED_ORDER_STATES
+            else settlement_totals(order.entries.all() if entries is None else entries))
     receivable = result['sales'] - paid['customer_deposit'] - paid['customer_received'] - order.customer_fee
     payable = result['cost'] - paid['supplier_deposit'] - paid['supplier_paid']
     # The supply date is day one of the agreed payment term.
@@ -57,6 +60,6 @@ def order_numbers(order, entries=None):
     result['customer_status'] = state(receivable, paid['customer_deposit'] + paid['customer_received'], customer_due, order.actual_date, order.state)
     result['supplier_status'] = state(payable, paid['supplier_deposit'] + paid['supplier_paid'], supplier_due, order.actual_date, order.state)
     # Pending delivery has estimated liabilities only, excluded from actual AR/AP summaries.
-    if not order.actual_date or order.state != 'active':
+    if not order.actual_date or order.state not in FINANCIAL_ORDER_STATES:
         result['receivable'] = result['payable'] = ZERO
     return result

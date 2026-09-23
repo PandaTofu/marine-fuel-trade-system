@@ -8,7 +8,7 @@ from django.utils import timezone
 from rest_framework.exceptions import APIException
 from core.models import Audit
 from .models import Account, Order, OrderLine, Entry, OrderRevision, Mutation, WriteLock
-from .calculations import COMPONENTS, ZERO, money, text, totals, settlement_totals
+from .calculations import COMPONENTS, FINANCIAL_ORDER_STATES, EXCLUDED_ORDER_STATES, ZERO, money, text, totals, settlement_totals, order_numbers
 from .serializers import OrderSerializer, AccountSerializer
 
 
@@ -24,6 +24,11 @@ def require_admin(actor):
         raise BusinessError('permission_denied', 403)
 
 
+def require_finance(actor):
+    if actor.role not in ('admin', 'finance'):
+        raise BusinessError('permission_denied', 403)
+
+
 def check_version(obj, version):
     if isinstance(version, bool) or str(version) != str(obj.version):
         raise BusinessError('version_conflict', 409)
@@ -31,7 +36,7 @@ def check_version(obj, version):
 
 def writable(order, version):
     check_version(order, version)
-    if order.state != 'active':
+    if order.state not in FINANCIAL_ORDER_STATES:
         raise BusinessError('order_closed', 409)
 
 
@@ -68,13 +73,21 @@ def command(request, scope, operation):
         return result
 
 
+def effective_entries(entries):
+    return [entry for entry in entries
+            if not entry.order_id or entry.order.state not in EXCLUDED_ORDER_STATES]
+
+
 def account_balance(account):
-    return Decimal(account.opening_balance) + sum((entry.amount if entry.direction == 'income' else -entry.amount for entry in account.entries.all()), ZERO)
+    return Decimal(account.opening_balance) + sum(
+        (entry.amount if entry.direction == 'income' else -entry.amount
+         for entry in effective_entries(account.entries.all())), ZERO)
 
 
 def account_data(account):
     result = dict(AccountSerializer(account).data)
-    entries = list(account.entries.all())
+    all_entries = list(account.entries.all())
+    entries = effective_entries(all_entries)
     income = sum((entry.amount for entry in entries if entry.direction == 'income'), ZERO)
     expense = sum((entry.amount for entry in entries if entry.direction == 'expense'), ZERO)
     expected = Decimal(account.opening_balance) + income - expense
@@ -86,7 +99,7 @@ def account_data(account):
         balance=text(balance),
         opening_difference=text(balance - expected),
         reconciled=balance == expected,
-        has_entries=bool(entries),
+        has_entries=bool(all_entries),
     )
     return result
 
@@ -182,14 +195,27 @@ def revision(order, actor, action, reason='', bump=True):
     return snapshot
 
 
+def sync_order_state(order):
+    if order.state in EXCLUDED_ORDER_STATES:
+        return
+    if not order.actual_date:
+        target = 'confirmed'
+    else:
+        numbers = order_numbers(order)
+        target = 'completed' if numbers['receivable'] == ZERO and numbers['payable'] == ZERO else 'supplied'
+    if order.state != target:
+        order.state = target
+        order.save(update_fields=['state', 'updated_at'])
+
+
 def save_order(actor, payload, pk=None):
     row = locked_order(pk) if pk else None
     previous_state = row.state if row else None
     if row:
         check_version(row, payload.get('version'))
-        if row.state not in ['active', 'draft']:
+        if row.state not in [*FINANCIAL_ORDER_STATES, 'draft']:
             raise BusinessError('order_closed', 409)
-        if row.state == 'active' and row.entries.exists() and not str(payload.get('reason', '')).strip():
+        if row.state in FINANCIAL_ORDER_STATES and row.entries.exists() and not str(payload.get('reason', '')).strip():
             raise BusinessError('reason_required')
     if len(str(payload.get('reason', ''))) > 1000:
         raise BusinessError('invalid')
@@ -199,12 +225,12 @@ def save_order(actor, payload, pk=None):
     lines = values.pop('lines', None)
     save_as_draft = values.pop('save_as_draft', False)
     settlements = {key: values.pop(key) for key in COMPONENTS if key in values}
-    if row and row.state == 'active' and save_as_draft:
+    if row and row.state in FINANCIAL_ORDER_STATES and save_as_draft:
         raise BusinessError('active_order_cannot_be_draft')
     if save_as_draft:
         values.update(state='draft')
     else:
-        values.update(state='active')
+        values.update(state='confirmed')
     if row is None:
         row = Order.objects.create(**values)
     else:
@@ -216,6 +242,8 @@ def save_order(actor, payload, pk=None):
         OrderLine.objects.bulk_create([OrderLine(order=row, position=i, **line) for i, line in enumerate(lines)])
     if settlements and not save_as_draft:
         paid = settlement_totals(row.entries.all())
+        if any(settlements.get(key, paid[key]) != paid[key] for key in COMPONENTS):
+            require_finance(actor)
         target_account = choose_account(currency=row.currency) if any(settlements.get(key, paid[key]) > paid[key] for key in COMPONENTS) else None
         posting_date = row.order_date
         if posting_date > timezone.localdate() and any(settlements.get(key, paid[key]) != paid[key] for key in COMPONENTS):
@@ -228,6 +256,7 @@ def save_order(actor, payload, pk=None):
                                source='correction' if delta < 0 else 'settlement', reason=reason)
     if not save_as_draft:
         validate_paid(row)
+        sync_order_state(row)
     action = 'draft' if save_as_draft else 'activated' if previous_state == 'draft' else 'updated' if pk else 'created'
     return revision(row, actor, action, str(payload.get('reason', '')), bump=bool(pk))
 
@@ -264,6 +293,7 @@ def post_component(order, actor, component, delta, date, account=None, source='s
 
 
 def settle(order, actor, values):
+    require_finance(actor)
     writable(order, values['version'])
     paid = settlement_totals(order.entries.all())
     changed = False
@@ -284,17 +314,21 @@ def settle(order, actor, values):
             changed = True
     order.save()
     validate_paid(order)
+    sync_order_state(order)
     return revision(order, actor, 'settlement', reason) if changed else dict(OrderSerializer(order).data)
 
 
 def refund(order, actor, values):
+    require_finance(actor)
     writable(order, values['version'])
     post_component(order, actor, values['component'], -values['amount'], values['date'], source='refund', reason=values['reason'])
     validate_paid(order)
+    sync_order_state(order)
     return revision(order, actor, 'refund', values['reason'])
 
 
 def manual_entry(actor, values):
+    require_finance(actor)
     order = locked_order(values['order_id']) if values.get('order_id') else None
     account = choose_account(values.get('account_id'), order.currency if order else None)
     if order:
@@ -311,6 +345,7 @@ def manual_entry(actor, values):
             raise BusinessError('component_required')
         post_component(order, actor, component, values['amount'], values['date'], account, source='settlement', reason=values['reason'])
         validate_paid(order)
+        sync_order_state(order)
     else:
         if component:
             raise BusinessError('component_not_allowed')
@@ -342,7 +377,7 @@ def reverse_entry(actor, pk, values):
 def close_order(order, actor, version, reason, void=False, date=None):
     require_admin(actor)
     check_version(order, version)
-    if order.state not in ['active', 'draft']:
+    if order.state not in [*FINANCIAL_ORDER_STATES, 'draft']:
         raise BusinessError('order_closed', 409)
     if not reason.strip():
         raise BusinessError('reason_required')

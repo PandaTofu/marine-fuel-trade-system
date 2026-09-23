@@ -3,7 +3,7 @@ from django.db import models
 
 
 class User(AbstractUser):
-    role = models.CharField(max_length=12, choices=[('admin', 'Admin'), ('operator', 'Operator')], default='operator')
+    role = models.CharField(max_length=12, choices=[('admin', 'Admin'), ('operator', 'Operator'), ('finance', 'Finance')], default='operator')
     language = models.CharField(max_length=8, choices=[('zh-CN', '中文'), ('en', 'English')], default='zh-CN')
     must_change_password = models.BooleanField(default=True)
     session_version = models.PositiveIntegerField(default=0)

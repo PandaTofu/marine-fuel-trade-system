@@ -62,6 +62,7 @@ class TradingTests(TestCase):
     def setUpTestData(cls):
         cls.admin = User.objects.create_user(username='finance-admin',role='admin',must_change_password=False)
         cls.operator = User.objects.create_user(username='finance-user',role='operator',must_change_password=False)
+        cls.finance = User.objects.create_user(username='accountant',role='finance',must_change_password=False)
         cls.account = Account.objects.create(name='USD primary',is_default=True,opening_balance='1000000.00')
 
     def setUp(self):
@@ -186,7 +187,7 @@ class TradingTests(TestCase):
         self.assertFalse(Entry.objects.exists())
         confirmed=self.write(f"orders/{draft['id']}/",{'version':draft['version'],'save_as_draft':False},method='patch')
         self.assertEqual(confirmed.status_code,200,confirmed.data)
-        self.assertEqual(confirmed.json()['state'],'active')
+        self.assertEqual(confirmed.json()['state'],'supplied')
         self.assertFalse(Entry.objects.exists())
 
     def test_fee_net_receipt_does_not_deduct_cash_twice(self):
@@ -386,7 +387,7 @@ class TradingTests(TestCase):
         first=self.create_order();second=self.settle(self.create_order(),customer_received='1')
         response=self.write('orders/bulk-delete/',{'orders':[{'id':o['id'],'version':o['version']} for o in [first,second]],'reason':'Batch'})
         self.assertEqual(response.json()['code'],'posted_order_protected')
-        self.assertEqual(Order.objects.filter(state='active').count(),2)
+        self.assertEqual(Order.objects.filter(state__in=['confirmed','supplied','completed']).count(),2)
         snapshot=self.client.get('/api/trading/orders/clear-snapshot/').json()
         third=self.create_order()
         response=self.write('orders/bulk-delete/',{'orders':snapshot,'clear_all':True,'confirmation':'CLEAR','reason':'All'})
@@ -477,11 +478,11 @@ class TradingTests(TestCase):
     def test_order_filters_summary_and_ledger_export(self):
         order=self.settle(self.create_order(),customer_received='100')
         pending=self.create_order(order_payload(False))
-        response=self.client.get('/api/trading/orders/',{'customer':'客户 A','supplier':'供应商 A','port':'Singapore','oil':'MGO','salesperson':'李明','state':'fulfilled','settlement_scope':'partial'})
+        response=self.client.get('/api/trading/orders/',{'customer':'客户 A','supplier':'供应商 A','port':'Singapore','oil':'MGO','salesperson':'李明','state':'supplied','settlement_scope':'partial'})
         self.assertEqual(response.json()['count'],1)
         self.assertEqual(response.json()['summary']['sales'],'910000.00')
         self.assertEqual(response.json()['summary']['partial_receipts'],1)
-        self.assertEqual(self.client.get('/api/trading/orders/',{'state':'pending'}).json()['results'][0]['id'],pending['id'])
+        self.assertEqual(self.client.get('/api/trading/orders/',{'state':'confirmed'}).json()['results'][0]['id'],pending['id'])
         self.assertEqual(self.client.get('/api/trading/ledger/',{'direction':'income','account':self.account.pk}).json()['net'],'100.00')
         self.assertEqual(self.write('ledger/',{'category':'other_income','direction':'income','amount':'5.50','reason':'=HYPERLINK("malicious")'}).status_code,201)
         ns={'s':'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
@@ -496,6 +497,53 @@ class TradingTests(TestCase):
                 self.assertIn('=HYPERLINK("malicious")',texts)
                 summary=ElementTree.fromstring(archive.read('xl/worksheets/sheet2.xml'))
                 self.assertIn('105.50',[node.text for node in summary.findall('.//s:v',ns)])
+
+    def test_pending_supply_only_counts_confirmed_orders_before_estimated_start(self):
+        future = order_payload(False)
+        future.update(
+            estimated_start_date=(timezone.localdate() + timedelta(days=2)).isoformat(),
+            estimated_end_date=(timezone.localdate() + timedelta(days=3)).isoformat(),
+        )
+        past = order_payload(False)
+        past.update(
+            estimated_start_date=(timezone.localdate() - timedelta(days=3)).isoformat(),
+            estimated_end_date=(timezone.localdate() - timedelta(days=2)).isoformat(),
+        )
+        self.create_order(future)
+        self.create_order(past)
+        self.create_order(dict(order_payload(False), save_as_draft=True))
+        self.assertEqual(self.client.get('/api/trading/orders/').json()['summary']['pending_count'], 1)
+
+    def test_operator_cannot_post_money_but_finance_can(self):
+        order = self.create_order()
+        operator = APIClient()
+        operator.force_authenticate(self.operator)
+        denied = self.write(
+            f"orders/{order['id']}/settlement/",
+            {'version': order['version'], 'customer_received': '10.00'},
+            client=operator,
+        )
+        self.assertEqual(denied.status_code, 403)
+        finance = APIClient()
+        finance.force_authenticate(self.finance)
+        allowed = self.write(
+            f"orders/{order['id']}/settlement/",
+            {'version': order['version'], 'customer_received': '10.00'},
+            client=finance,
+        )
+        self.assertEqual(allowed.status_code, 200, allowed.data)
+
+    def test_void_order_entries_are_excluded_from_ledger_totals(self):
+        order = self.settle(self.create_order(), customer_received='100.00')
+        row = Order.objects.get(pk=order['id'])
+        self.assertEqual(self.write(
+            f'orders/{row.pk}/void/',
+            {'version': row.version, 'reason': 'Cancelled business'},
+        ).status_code, 200)
+        totals = self.client.get('/api/trading/ledger/').json()
+        self.assertEqual(totals['income'], '0.00')
+        self.assertEqual(totals['expense'], '0.00')
+        self.assertEqual(account_balance(self.account), Decimal('1000000.00'))
 
     def test_csrf_is_enforced_on_trading_write(self):
         client=APIClient(enforce_csrf_checks=True)
@@ -531,4 +579,3 @@ class ConcurrentPostingTests(TransactionTestCase):
         self.assertEqual(Entry.objects.count(),1)
         self.assertEqual(Order.objects.get(pk=order['id']).version,2)
         self.assertIn(account_balance(account),[Decimal('100'),Decimal('130')])
-
