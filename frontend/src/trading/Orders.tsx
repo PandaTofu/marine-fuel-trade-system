@@ -17,6 +17,7 @@ import {
   FileExcelOutlined,
   FilePdfOutlined,
   MoreOutlined,
+  StopOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { useTranslation } from "react-i18next";
@@ -181,14 +182,22 @@ export default function Orders({
                     />
                   </span>
                 </Tooltip>
+                {user?.role === "admin" && (
+                  <Tooltip title={t("biz.voidAction")}>
+                    <Button
+                      size="small"
+                      type="text"
+                      danger
+                      aria-label={t("biz.voidAction")}
+                      icon={<StopOutlined />}
+                      onClick={() => setClosing({ action: "void", rows: [o] })}
+                    />
+                  </Tooltip>
+                )}
                 <Dropdown
                   trigger={["click"]}
                   menu={{
                     onClick: async ({ key }) => {
-                      if (key === "void-order") {
-                        setClosing({ action: "void", rows: [o] });
-                        return;
-                      }
                       if (
                         key === "export-contract" ||
                         key === "issue-invoice"
@@ -205,16 +214,6 @@ export default function Orders({
                       }
                     },
                     items: [
-                      ...(user?.role === "admin"
-                        ? [
-                            {
-                              key: "void-order",
-                              icon: <DeleteOutlined />,
-                              label: t("biz.voidAction"),
-                              danger: true,
-                            },
-                          ]
-                        : []),
                       {
                         key: "export-order",
                         icon: <FileExcelOutlined />,
@@ -304,7 +303,6 @@ export default function Orders({
                 ]
               : [
                   "order_count",
-                  "pending_count",
                   "sales",
                   "cost",
                   "commission",

@@ -119,7 +119,6 @@ export interface Summary {
   berth_fee: string;
   exceptional_fee: string;
   order_count: number;
-  pending_count: number;
   receivable_count: number;
   payable_count: number;
   customer_overdue: string;

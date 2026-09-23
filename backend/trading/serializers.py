@@ -74,6 +74,9 @@ class OrderSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'estimated_start_date': 'estimated_range_required', 'estimated_end_date': 'estimated_range_required'})
         if estimated_start and estimated_end and estimated_start > estimated_end:
             raise serializers.ValidationError({'estimated_end_date': 'estimated_range_order'})
+        actual_date = attrs.get('actual_date', getattr(self.instance, 'actual_date', None))
+        if actual_date and actual_date > timezone.localdate():
+            raise serializers.ValidationError({'actual_date': 'future_actual_date'})
         lines = attrs.get('lines')
         if lines is not None and (not lines or len(lines) > 100):
             raise serializers.ValidationError({'lines': 'one_to_100_lines'})

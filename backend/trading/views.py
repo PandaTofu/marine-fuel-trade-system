@@ -77,11 +77,6 @@ def summary(rows):
     amounts = {key: text(sum((Decimal(row['numbers'][key]) for row in supplied), ZERO)) for key in ['sales','cost','commission','profit','receivable','payable']}
     amounts.update({key: text(sum((Decimal(row[key]) for row in supplied), ZERO)) for key in ['customer_fee','supplier_fee','berth_fee','exceptional_fee']})
     amounts['order_count'] = len(active)
-    today = timezone.localdate()
-    amounts['pending_count'] = sum(
-        row['state'] == 'confirmed' and not row['actual_date'] and
-        bool(row['estimated_start_date']) and date.fromisoformat(row['estimated_start_date']) >= today
-        for row in active)
     for side, key in [('customer','receivable'),('supplier','payable')]:
         amounts[f'{key}_count'] = sum(Decimal(row['numbers'][key]) > 0 for row in supplied)
         amounts[f'{side}_overdue'] = text(sum((Decimal(row['numbers'][key]) for row in supplied if row['numbers'][f'{side}_status'] == 'overdue'),ZERO))

@@ -583,7 +583,7 @@ export function OrderEditor({
                   />
                 </Form.Item>
                 <Form.Item name="actual_date" label={t("biz.actualSupplyDate")}>
-                  <Input type="date" />
+                  <Input type="date" max={today()} />
                 </Form.Item>
               </div>,
             )}

@@ -325,7 +325,7 @@ class TradingTests(TestCase):
         precision=copy.deepcopy(payload);precision['lines'][0]['ordered_qty_min']='1.0001'
         self.assertEqual(self.write('orders/',precision).status_code,400)
         future=dict(payload,actual_date=(timezone.localdate()+timedelta(days=1)).isoformat())
-        self.assertEqual(self.write('orders/',future).status_code,201)
+        self.assertEqual(self.write('orders/',future).status_code,400)
 
     def test_ordered_quantity_range_and_independent_actual_fields(self):
         payload=order_payload(False)
@@ -338,7 +338,8 @@ class TradingTests(TestCase):
         payload=order_payload(False)
         payload['actual_date']=(timezone.localdate()+timedelta(days=7)).isoformat()
         response=self.write('orders/',payload)
-        self.assertEqual(response.status_code,201,response.data)
+        self.assertEqual(response.status_code,400,response.data)
+        self.assertEqual(str(response.data['actual_date'][0]), 'future_actual_date')
 
     def test_manual_cash_expense_does_not_change_accrued_profit(self):
         order=self.create_order()
@@ -497,22 +498,6 @@ class TradingTests(TestCase):
                 self.assertIn('=HYPERLINK("malicious")',texts)
                 summary=ElementTree.fromstring(archive.read('xl/worksheets/sheet2.xml'))
                 self.assertIn('105.50',[node.text for node in summary.findall('.//s:v',ns)])
-
-    def test_pending_supply_only_counts_confirmed_orders_before_estimated_start(self):
-        future = order_payload(False)
-        future.update(
-            estimated_start_date=(timezone.localdate() + timedelta(days=2)).isoformat(),
-            estimated_end_date=(timezone.localdate() + timedelta(days=3)).isoformat(),
-        )
-        past = order_payload(False)
-        past.update(
-            estimated_start_date=(timezone.localdate() - timedelta(days=3)).isoformat(),
-            estimated_end_date=(timezone.localdate() - timedelta(days=2)).isoformat(),
-        )
-        self.create_order(future)
-        self.create_order(past)
-        self.create_order(dict(order_payload(False), save_as_draft=True))
-        self.assertEqual(self.client.get('/api/trading/orders/').json()['summary']['pending_count'], 1)
 
     def test_operator_cannot_post_money_but_finance_can(self):
         order = self.create_order()
