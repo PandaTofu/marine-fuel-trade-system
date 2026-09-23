@@ -33,7 +33,6 @@ class Migration(migrations.Migration):
     dependencies = [('trading', '0008_single_default_account')]
 
     operations = [
-        migrations.RunPython(migrate_states, migrations.RunPython.noop),
         migrations.AlterField(
             model_name='order',
             name='state',
@@ -43,4 +42,5 @@ class Migration(migrations.Migration):
                 max_length=12,
             ),
         ),
+        migrations.RunPython(migrate_states, migrations.RunPython.noop),
     ]
