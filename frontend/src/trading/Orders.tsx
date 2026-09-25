@@ -1,10 +1,10 @@
 import { useState } from "react";
 import {
+  App,
   Button,
   Card,
   Form,
   Input,
-  Modal,
   Select,
   Space,
   Table,
@@ -12,7 +12,6 @@ import {
   Tooltip,
 } from "antd";
 import {
-  EditOutlined,
   FileDoneOutlined,
   FileExcelOutlined,
   FilePdfOutlined,
@@ -23,6 +22,7 @@ import { useAuth } from "../auth";
 import { ErrorBox } from "../components";
 import {
   cash,
+  downloadOrderExcel,
   Metrics,
   query,
   Status,
@@ -38,6 +38,7 @@ export default function Orders({
   settlements?: boolean;
 }) {
   const { t } = useTranslation();
+  const { modal } = App.useApp();
   const { user } = useAuth();
   const [filters, setFilters] = useState<Record<string, unknown>>(
       settlements ? { state: "financial" } : {},
@@ -46,6 +47,7 @@ export default function Orders({
   const [filterForm] = Form.useForm();
   const [activeTab, setActiveTab] = useState("list");
   const [newOrderOpen, setNewOrderOpen] = useState(false);
+  const [exportError, setExportError] = useState("");
   const r = useResource<OrderList>(
     "trading/orders/?" + query({ ...filters, page }),
   );
@@ -67,9 +69,12 @@ export default function Orders({
       dataIndex: "number",
       width: 195,
       render: (v: string, o: Order) => (
-        <Button type="link" onClick={() => setDetail(o)}>
-          {v}
-        </Button>
+        <Space direction="vertical" size={2}>
+          <Button type="link" onClick={() => setDetail(o)}>
+            {v}
+          </Button>
+          <Status value={o.state} />
+        </Space>
       ),
     },
     ...["order_date", "customer", "vessel", "supplier", "port"].map((key) => ({
@@ -144,18 +149,18 @@ export default function Orders({
             )
           ) : (
             <Space size={6}>
-              {o.state !== "void" && (
-                <Tooltip title={t("biz.edit")}>
-                  <Button
-                    size="small"
-                    type="text"
-                    aria-label={t("biz.edit")}
-                    icon={<EditOutlined />}
-                    onClick={() => setEditor(o)}
-                  />
-                </Tooltip>
-              )}
-              <Button size="small" icon={<FileExcelOutlined />} disabled>
+              <Button
+                size="small"
+                icon={<FileExcelOutlined />}
+                onClick={async () => {
+                  setExportError("");
+                  try {
+                    await downloadOrderExcel(o.id, o.number);
+                  } catch (error) {
+                    setExportError((error as Error).message);
+                  }
+                }}
+              >
                 {t("biz.exportOrderExcel")}
               </Button>
               <Button
@@ -174,7 +179,6 @@ export default function Orders({
               </Button>
             </Space>
           )}
-          {!settlements && <Status value={o.state} />}
         </div>
       ),
     },
@@ -188,7 +192,7 @@ export default function Orders({
     setActiveTab("list");
   };
   const requestCloseNewOrder = () => {
-    Modal.confirm({
+    modal.confirm({
       title: t("biz.unsavedOrderTitle"),
       content: t("biz.unsavedOrderHint"),
       okText: t("biz.discardChanges"),
@@ -206,8 +210,8 @@ export default function Orders({
           hideAdd
           activeKey={activeTab}
           onChange={setActiveTab}
-          onEdit={(key, action) => {
-            if (action === "remove" && key === "new-order") requestCloseNewOrder();
+          onEdit={(_, action) => {
+            if (action === "remove") requestCloseNewOrder();
           }}
           items={[
             { key: "list", label: t("biz.orders"), closable: false },
@@ -340,13 +344,14 @@ export default function Orders({
           </Button>
         )}
       </div>
-      <ErrorBox error={r.error} retry={r.refresh} />
+      <ErrorBox error={r.error || exportError} retry={r.refresh} />
       <Table<Order>
         rowKey="id"
         loading={r.loading}
         dataSource={r.data?.results}
         columns={columns}
         scroll={{ x: 2600 }}
+        rowClassName={(row) => row.state === "void" ? "order-row-void" : ""}
         pagination={{
           current: page,
           pageSize: 20,
@@ -392,6 +397,10 @@ export default function Orders({
         <OrderDetail
           order={detail}
           onClose={() => setDetail(null)}
+          onEdit={(current) => {
+            setDetail(null);
+            setEditor(current);
+          }}
           onChanged={(updated) => {
             setDetail(updated);
             refresh();

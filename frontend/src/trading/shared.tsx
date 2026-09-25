@@ -470,3 +470,22 @@ export async function downloadOrderDocument(
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+export async function downloadOrderExcel(orderId: number, orderNumber: string) {
+  const res = await fetch(`/api/trading/orders/${orderId}/export/`, {
+    credentials: "same-origin",
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ code: "server_error" }));
+    if (["session_expired", "not_authenticated"].includes(body.code))
+      window.dispatchEvent(new Event("session-ended"));
+    throw new ApiError(body.code, res.status);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `order_${orderNumber}.xlsx`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}

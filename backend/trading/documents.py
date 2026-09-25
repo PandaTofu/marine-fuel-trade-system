@@ -45,7 +45,7 @@ def day(value_, long=False):
 
 
 def order_number(order):
-    return f'BO-{order.order_date:%Y%m%d}-{order.pk:06d}'
+    return order.number
 
 
 def document_defaults(order, kind):

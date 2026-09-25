@@ -40,19 +40,14 @@ class OrderSerializer(serializers.ModelSerializer):
     supplier_paid = serializers.DecimalField(max_digits=18, decimal_places=2, min_value=0, required=False, write_only=True)
     lines = LineSerializer(many=True)
     numbers = serializers.SerializerMethodField()
-    number = serializers.SerializerMethodField()
-
     class Meta:
         model = Order
         fields = ['id', 'number', 'public_id', 'order_date', 'customer', 'customer_reference', 'supplier', 'supplier_reference', 'vessel', 'port', 'port_reference', 'imo', 'estimated_start_date', 'estimated_end_date', 'actual_date', 'customer_term_description', 'customer_term', 'supplier_term_description', 'supplier_term', 'commission_rate', 'commission_recipient', 'salesperson', 'salesperson_reference', 'customer_fee', 'supplier_fee', 'berth_fee', 'exceptional_fee', 'customer_deposit', 'customer_received', 'supplier_deposit', 'supplier_paid', 'save_as_draft', 'desired_state', 'note', 'currency', 'state', 'version', 'lines', 'numbers', 'updated_at']
-        read_only_fields = ['state', 'version', 'public_id', 'updated_at']
+        read_only_fields = ['number', 'state', 'version', 'public_id', 'updated_at']
         extra_kwargs = {key: {'min_value': Decimal(0)} for key in ['commission_rate', 'customer_fee', 'supplier_fee', 'berth_fee', 'exceptional_fee']}
 
     def get_numbers(self, row):
         return {key: text(value) if isinstance(value, Decimal) and key != 'quantity' else format(value, '.3f') if isinstance(value, Decimal) else value.isoformat() if hasattr(value, 'isoformat') else value for key, value in order_numbers(row).items()}
-
-    def get_number(self, row):
-        return f'BO-{row.order_date:%Y%m%d}-{row.pk:06d}'
 
     def validate(self, attrs):
         for field, expected_kind, snapshot in [
@@ -178,7 +173,7 @@ class EntrySerializer(serializers.ModelSerializer):
         fields = ['id', 'account', 'account_name', 'account_currency', 'order', 'order_number', 'date', 'direction', 'category', 'amount', 'component', 'settlement_delta', 'source', 'reason', 'actor_name', 'reversal_of', 'reversed', 'created_at']
 
     def get_order_number(self, row):
-        return f'BO-{row.order.order_date:%Y%m%d}-{row.order_id:06d}' if row.order_id else ''
+        return row.order.number if row.order_id else ''
 
     def get_reversed(self, row):
         return hasattr(row, 'reversed_by')

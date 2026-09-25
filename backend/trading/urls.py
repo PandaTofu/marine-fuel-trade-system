@@ -9,6 +9,7 @@ urlpatterns = [
     path('orders/<int:pk>/',views.order_detail),
     path('orders/<int:pk>/invoice/',views.order_document,{'kind':'invoice'}),
     path('orders/<int:pk>/contract/',views.order_document,{'kind':'contract'}),
+    path('orders/<int:pk>/export/',views.order_export),
     path('orders/<int:pk>/documents/<str:kind>/',views.order_document_content),
     path('orders/<int:pk>/settlement/',views.settlement),
     path('orders/<int:pk>/refund/',views.order_refund),

@@ -52,6 +52,10 @@ const zh = {
   save: "保存",
   cancel: "取消",
   edit: "编辑",
+  delete: "删除",
+  deleted: "已删除",
+  deleteReferenceTitle: "删除这条基础资料？",
+  deleteReferenceHint: "删除后无法恢复；已被订单引用的资料不能删除，可改为停用。",
   add: "新增",
   search: "搜索名称或编码",
   actions: "操作",
@@ -141,6 +145,7 @@ const zh = {
     password_change_required: "请先修改初始密码。",
     password_unchanged: "新密码不能与当前密码相同。",
     self_admin_protected: "不能停用自己或取消自己的管理员角色。",
+    reference_in_use: "该资料已被订单引用，不能删除，请改为停用。",
     server_error: "服务出现错误，请稍后重试。",
   },
 };
@@ -202,6 +207,10 @@ const en: typeof zh = {
   save: "Save",
   cancel: "Cancel",
   edit: "Edit",
+  delete: "Delete",
+  deleted: "Deleted",
+  deleteReferenceTitle: "Delete this master-data record?",
+  deleteReferenceHint: "This cannot be undone. Records used by orders cannot be deleted; deactivate them instead.",
   add: "Add",
   search: "Search by name or code",
   actions: "Actions",
@@ -299,6 +308,8 @@ const en: typeof zh = {
     password_unchanged: "Choose a password different from the current one.",
     self_admin_protected:
       "You cannot deactivate or demote your own administrator account.",
+    reference_in_use:
+      "This record is used by an order and cannot be deleted. Deactivate it instead.",
     server_error: "A server error occurred. Please try again later.",
   },
 };

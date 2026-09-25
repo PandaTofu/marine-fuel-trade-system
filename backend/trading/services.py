@@ -208,6 +208,16 @@ def sync_order_state(order):
         order.save(update_fields=['state', 'updated_at'])
 
 
+def next_order_number(order_date):
+    prefix = order_date.strftime('%Y%m')
+    latest = (Order.objects.filter(number__startswith=f'{prefix}-')
+              .order_by('-number').values_list('number', flat=True).first())
+    sequence = int(latest.rsplit('-', 1)[1]) + 1 if latest else 1
+    if sequence > 999:
+        raise BusinessError('monthly_order_limit')
+    return f'{prefix}-{sequence:03d}'
+
+
 def save_order(actor, payload, pk=None):
     row = locked_order(pk) if pk else None
     previous_state = row.state if row else None
@@ -240,7 +250,7 @@ def save_order(actor, payload, pk=None):
     else:
         values.update(state='confirmed')
     if row is None:
-        row = Order.objects.create(**values)
+        row = Order.objects.create(number=next_order_number(values['order_date']), **values)
     else:
         for key, value in values.items():
             setattr(row, key, value)

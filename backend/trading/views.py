@@ -115,7 +115,54 @@ def order_document(request, pk, kind):
     document_content = saved.content if saved else None
     content = invoice_pdf(row, document_content) if kind == 'invoice' else contract_pdf(row, document_content)
     response = HttpResponse(content, content_type='application/pdf')
-    response['Content-Disposition'] = f'attachment; filename="{kind}_{row.order_date:%Y%m%d}_{row.pk:06d}.pdf"'
+    response['Content-Disposition'] = f'attachment; filename="{kind}_{row.number}.pdf"'
+    return response
+
+
+@api_view(['GET'])
+def order_export(request, pk):
+    try:
+        order = Order.objects.exclude(state='deleted').prefetch_related('lines', 'entries').get(pk=pk)
+    except Order.DoesNotExist:
+        raise BusinessError('not_found', 404)
+    data = OrderSerializer(order).data
+    numbers = data['numbers']
+    numeric = lambda value: Decimal(str(value)) if value not in (None, '') else ''
+    summary_rows = [
+        ['字段', '内容'],
+        ['订单编号', data['number']], ['订单日期', data['order_date']],
+        ['订单状态', data['state']], ['客户', data['customer']],
+        ['供应商', data['supplier']], ['船名', data['vessel']],
+        ['IMO', data['imo']], ['港口', data['port']],
+        ['预计供货开始', data['estimated_start_date']], ['预计供货结束', data['estimated_end_date']],
+        ['实际供货日期', data['actual_date']],
+        ['客户付款账期', data['customer_term_description']], ['客户付款天数', data['customer_term']],
+        ['供应商付款账期', data['supplier_term_description']], ['供应商付款天数', data['supplier_term']],
+        ['销售人员', data['salesperson']], ['佣金收款人/单位', data['commission_recipient']],
+        ['佣金单价（USD/MT）', numeric(data['commission_rate'])],
+        ['销售总额（USD）', numeric(numbers['sales'])], ['成本总额（USD）', numeric(numbers['cost'])],
+        ['佣金总额（USD）', numeric(numbers['commission'])], ['实际利润（USD）', numeric(numbers['profit'])],
+        ['客户银行手续费（USD）', numeric(data['customer_fee'])],
+        ['供应商付款手续费（USD）', numeric(data['supplier_fee'])],
+        ['泊船费（USD）', numeric(data['berth_fee'])], ['异常费用（USD）', numeric(data['exceptional_fee'])],
+        ['剩余应收（USD）', numeric(numbers['receivable'])], ['剩余应付（USD）', numeric(numbers['payable'])],
+        ['客户收款到期日', numbers['customer_due']], ['供应商付款到期日', numbers['supplier_due']],
+        ['备注', data['note']],
+    ]
+    product_rows = [[
+        '订单编号', '行号', '油品名称', '订单最小数量（MT）', '订单最大数量（MT）',
+        '实际数量（MT）', '销售单价（USD/MT）', '销售金额（USD）',
+        '供应商成本单价（USD/MT）', '供应商成本金额（USD）',
+    ]]
+    for index, line in enumerate(data['lines'], 1):
+        product_rows.append([
+            data['number'], index, line['oil'], numeric(line['ordered_qty_min']), numeric(line['ordered_qty_max']),
+            numeric(line['actual_qty']), numeric(line['sale_price']), numeric(line['sale_amount']),
+            numeric(line['cost_price']), numeric(line['cost_amount']),
+        ])
+    content = workbook([('订单汇总', summary_rows), ('产品明细', product_rows)])
+    response = HttpResponse(content, content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition'] = f'attachment; filename="order_{order.number}.xlsx"'
     return response
 
 
@@ -199,7 +246,7 @@ def options(request):
     if request.query_params.get('q'):
         q=request.query_params['q']
         qs=qs.filter(Q(vessel__icontains=q)|Q(customer__icontains=q))
-    return Response([{'id':o.pk,'version':o.version,'label':f'BO-{o.order_date:%Y%m%d}-{o.pk:06d} · {o.vessel} · {o.customer}'} for o in qs[:100]])
+    return Response([{'id':o.pk,'version':o.version,'label':f'{o.number} · {o.vessel} · {o.customer}'} for o in qs[:100]])
 
 
 @api_view(['GET'])
@@ -324,7 +371,7 @@ def ledger_export(request):
     headers=['Date','Account','Direction','Category','Amount (USD)','Order','Component','Source','Notes','Operator'] if english else ['日期','账户','收支方向','分类','金额（美元）','订单','结算项目','来源','备注','操作人']
     labels={'income':'收入','expense':'支出','customer_receipt':'客户收款','supplier_payment':'供应商付款','bank_fee':'银行手续费','commission':'佣金','berth':'泊位费','other_income':'其他收入','other_expense':'其他支出','settlement':'订单收付款','manual':'手工登记','correction':'录错更正','refund':'实际退款','reversal':'冲销','void':'作废冲销','customer_deposit':'客户订金','customer_received':'客户后续收款','supplier_deposit':'供应商订金','supplier_paid':'供应商后续付款'}
     translate=lambda value:value.replace('_',' ').title() if english else labels.get(value,value)
-    details=[headers]+[[row.date.isoformat(),row.account.name,translate(row.direction),translate(row.category),row.amount,f'BO-{row.order.order_date:%Y%m%d}-{row.order_id:06d}' if row.order else '',translate(row.component),translate(row.source),row.reason,row.actor.username] for row in rows]
+    details=[headers]+[[row.date.isoformat(),row.account.name,translate(row.direction),translate(row.category),row.amount,row.order.number if row.order else '',translate(row.component),translate(row.source),row.reason,row.actor.username] for row in rows]
     calculated=effective_ledger_rows(rows)
     income=sum((row.amount for row in calculated if row.direction=='income'),ZERO)
     expense=sum((row.amount for row in calculated if row.direction=='expense'),ZERO)

@@ -43,6 +43,7 @@ class Account(models.Model):
 
 class Order(models.Model):
     public_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    number = models.CharField(max_length=10, unique=True, editable=False)
     order_date = models.DateField()
     customer = models.CharField(max_length=160)
     customer_reference = models.ForeignKey(Reference, related_name='customer_orders', null=True, blank=True, on_delete=models.PROTECT)

@@ -14,7 +14,7 @@ import {
   Tooltip,
   App,
 } from "antd";
-import { EditOutlined, PlusOutlined } from "@ant-design/icons";
+import { DeleteOutlined, EditOutlined, PlusOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { Navigate, useNavigate, useParams } from "react-router-dom";
 import { api } from "./api";
@@ -22,7 +22,7 @@ import type { Reference } from "./api";
 import { ErrorBox, Language } from "./components";
 export default function References() {
   const { t } = useTranslation(),
-    { message } = App.useApp(),
+    { message, modal } = App.useApp(),
     navigate = useNavigate(),
     { kind: paramKind } = useParams();
   const kinds = ["customer", "supplier", "oil", "port", "salesperson"] as const;
@@ -125,7 +125,19 @@ export default function References() {
           scroll={{ x: ["customer", "supplier"].includes(kind) ? 1450 : 760 }}
           locale={{ emptyText: t("empty") }}
           columns={[
-            { title: t("code"), dataIndex: "code", width: 150 },
+            {
+              title: t("code"),
+              dataIndex: "code",
+              width: 150,
+              render: (code: string, r) => (
+                <Space direction="vertical" size={2}>
+                  <span className={r.is_active ? "" : "reference-code-inactive"}>{code}</span>
+                  <Tag color={r.is_active ? "cyan" : "default"}>
+                    {t(r.is_active ? "active" : "inactive")}
+                  </Tag>
+                </Space>
+              ),
+            },
             {
               title: t("name"),
               dataIndex: "name",
@@ -141,25 +153,43 @@ export default function References() {
                 ]
               : []),
             {
-              title: t("is_active"),
-              render: (_, r) => (
-                <Tag color={r.is_active ? "cyan" : "default"}>
-                  {t(r.is_active ? "active" : "inactive")}
-                </Tag>
-              ),
-            },
-            {
               title: t("actions"),
-              width: 90,
+              width: 110,
               render: (_, r) => (
-                <Tooltip title={t("edit")}>
-                  <Button
-                    type="text"
-                    aria-label={t("edit")}
-                    icon={<EditOutlined />}
-                    onClick={() => open(r)}
-                  />
-                </Tooltip>
+                <Space size={4}>
+                  <Tooltip title={t("edit")}>
+                    <Button
+                      type="text"
+                      aria-label={t("edit")}
+                      icon={<EditOutlined />}
+                      onClick={() => open(r)}
+                    />
+                  </Tooltip>
+                  <Tooltip title={t("delete")}>
+                    <Button
+                      type="text"
+                      danger
+                      aria-label={t("delete")}
+                      icon={<DeleteOutlined />}
+                      onClick={() => modal.confirm({
+                        title: t("deleteReferenceTitle"),
+                        content: t("deleteReferenceHint"),
+                        okText: t("delete"),
+                        cancelText: t("cancel"),
+                        okButtonProps: { danger: true },
+                        onOk: async () => {
+                          try {
+                            await api(`reference/${r.id}/`, "DELETE");
+                            message.success(t("deleted"));
+                            await load();
+                          } catch (e) {
+                            message.error(t((e as Error).message));
+                          }
+                        },
+                      })}
+                    />
+                  </Tooltip>
+                </Space>
               ),
             },
           ]}

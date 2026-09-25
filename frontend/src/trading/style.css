@@ -295,10 +295,9 @@
   height: 32px;
   min-width: 0;
   align-items: center;
-  overflow: hidden;
   color: #17394d;
+  font-size: 12px;
   font-weight: 700;
-  text-overflow: ellipsis;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
@@ -374,6 +373,14 @@
   gap: 6px;
   min-height: 24px;
   white-space: nowrap;
+}
+.ant-table-tbody > tr.order-row-void > td,
+.ant-table-tbody > tr.order-row-void:hover > td {
+  background: #f0f1f2 !important;
+  color: #8a9299;
+}
+.order-row-void .ant-btn:not(.ant-btn-primary) {
+  color: #747d85;
 }
 .business-detail {
   display: grid;

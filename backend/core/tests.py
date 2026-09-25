@@ -134,9 +134,10 @@ class FoundationTests(TestCase):
             self.assertEqual(c.get('/api/reference/?kind='+kind).json()[0]['id'],pk)
             self.assertEqual(c.patch(f'/api/reference/{pk}/',{'is_active':False},format='json').status_code,200)
             self.assertFalse(Reference.objects.get(pk=pk).is_active)
-            self.assertEqual(c.delete(f'/api/reference/{pk}/').status_code,405)
-        self.assertEqual(Reference.objects.count(),5)
+            self.assertEqual(c.delete(f'/api/reference/{pk}/').status_code,204)
+        self.assertEqual(Reference.objects.count(),0)
         self.assertEqual(Audit.objects.filter(action='reference_created').count(),5)
+        self.assertEqual(Audit.objects.filter(action='reference_deleted').count(),5)
 
     def test_duplicate_reference_and_validation(self):
         c = self.client_for()

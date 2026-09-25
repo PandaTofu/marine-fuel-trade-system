@@ -4,6 +4,7 @@ from django.contrib.auth import login, logout, update_session_auth_hash
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as PasswordError
 from django.db import transaction
+from django.db.models.deletion import ProtectedError
 from django.db.models import Q
 from django.middleware.csrf import get_token
 from django.utils import timezone
@@ -185,8 +186,7 @@ class Users(ModelViewSet):
 
 class References(ModelViewSet):
     serializer_class = ReferenceSerializer
-    # Preserve identifiers for later order references; deactivate instead of deleting.
-    http_method_names = ['get', 'post', 'patch', 'head', 'options']
+    http_method_names = ['get', 'post', 'patch', 'delete', 'head', 'options']
 
     def get_queryset(self):
         qs = Reference.objects.all()
@@ -208,6 +208,17 @@ class References(ModelViewSet):
         with transaction.atomic():
             row = serializer.save()
             audit(self.request, 'reference_updated', row.pk)
+
+    def destroy(self, request, *args, **kwargs):
+        row = self.get_object()
+        try:
+            with transaction.atomic():
+                target = row.pk
+                row.delete()
+                audit(request, 'reference_deleted', target)
+        except ProtectedError:
+            return Response({'code': 'reference_in_use'}, status=409)
+        return Response(status=204)
 
 
 @api_view(['GET', 'PATCH'])

@@ -782,3 +782,7 @@ a:focus-visible {
 }
 
 .forecast-chart{display:block;width:100%;height:190px;margin-bottom:16px;background:linear-gradient(180deg,#f8fbff,#fff);border-radius:12px}.forecast-line{fill:none;stroke:#2563eb;stroke-width:4;stroke-linecap:round;stroke-linejoin:round}.forecast-zero{stroke:#ef4444;stroke-width:1.5;stroke-dasharray:6 5}
+.reference-code-inactive {
+  color: #8c8c8c;
+  text-decoration: line-through;
+}

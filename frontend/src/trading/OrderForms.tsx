@@ -16,6 +16,7 @@ import {
 } from "antd";
 import {
   DeleteOutlined,
+  EditOutlined,
   EyeOutlined,
   PlusOutlined,
 } from "@ant-design/icons";
@@ -109,28 +110,10 @@ export function OrderEditor({
     `${value < 0n ? "-" : ""}${(value < 0n ? -value : value) / 100n}.${String((value < 0n ? -value : value) % 100n).padStart(2, "0")}`;
   const quantityText = (value: bigint) =>
     `${value / 1000n}.${String(value % 1000n).padStart(3, "0")}`;
-  const compactText = (value: string) => {
-    const number = Number(value);
-    if (!Number.isFinite(number) || Math.abs(number) < 1000) return value;
-    const [suffix, divisor] =
-      Math.abs(number) >= 1e9
-        ? ["B", 1e9]
-        : Math.abs(number) >= 1e6
-          ? ["M", 1e6]
-          : ["K", 1e3];
-    const fixed = (number / divisor).toFixed(
-      Math.abs(number / divisor) >= 100
-        ? 0
-        : Math.abs(number / divisor) >= 10
-          ? 1
-          : 2,
-    );
-    return `${fixed.includes(".") ? fixed.replace(/0+$/, "").replace(/\.$/, "") : fixed}${suffix}`;
-  };
   const calculated = (value: bigint, danger = false) => (
     <Tooltip title={cash(moneyText(value))}>
       <span className={`calculated-value${danger ? " danger" : ""}`}>
-        $ {compactText(moneyText(value))}
+        {cash(moneyText(value))}
       </span>
     </Tooltip>
   );
@@ -520,13 +503,13 @@ export function OrderEditor({
                             title={`${quantityText(totals.orderedMin)}–${quantityText(totals.orderedMax)} MT`}
                           >
                             <span>
-                              {compactText(quantityText(totals.orderedMin))}–
-                              {compactText(quantityText(totals.orderedMax))} MT
+                              {quantityText(totals.orderedMin)}–
+                              {quantityText(totals.orderedMax)} MT
                             </span>
                           </Tooltip>
                           <Tooltip title={`${quantityText(totals.actual)} MT`}>
                             <span>
-                              {compactText(quantityText(totals.actual))} MT
+                              {quantityText(totals.actual)} MT
                             </span>
                           </Tooltip>
                           <span />
@@ -697,7 +680,7 @@ export function OrderEditor({
                   <span>{String(label)}</span>
                   <Tooltip title={cash(moneyText(value as bigint))}>
                     <strong className="danger">
-                      $ {compactText(moneyText(value as bigint))}
+                      {cash(moneyText(value as bigint))}
                     </strong>
                   </Tooltip>
                 </div>
@@ -1028,10 +1011,12 @@ function OrderPaymentEditor({
 export function OrderDetail({
   order,
   onClose,
+  onEdit,
   onChanged,
 }: {
   order: Order;
   onClose: () => void;
+  onEdit: (order: Order) => void;
   onChanged: (order: Order) => void;
 }) {
   const { t } = useTranslation();
@@ -1054,10 +1039,19 @@ export function OrderDetail({
       open
       width={1100}
       title={
-        <Space>
-          {order.number}
-          <Language />
-        </Space>
+        <div className="order-modal-title">
+          <Space>
+            {order.number}
+            <Language />
+          </Space>
+          <Button
+            icon={<EditOutlined />}
+            disabled={order.state === "void"}
+            onClick={() => onEdit(order)}
+          >
+            {t("biz.edit")}
+          </Button>
+        </div>
       }
       onCancel={onClose}
       footer={null}

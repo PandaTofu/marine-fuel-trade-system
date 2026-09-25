@@ -107,6 +107,28 @@ class TradingTests(TestCase):
         self.assertEqual(self.client.get(path).json()['content']['buyer'], 'Edited PDF buyer only')
         self.assertTrue(self.client.get(f"/api/trading/orders/{order['id']}/contract/").content.startswith(b'%PDF-'))
 
+    def test_order_numbers_restart_each_month_and_excel_has_two_sheets(self):
+        september = order_payload(False)
+        september['order_date'] = '2026-09-30'
+        first = self.create_order(september)
+        second = self.create_order(september)
+        october = order_payload(False)
+        october['order_date'] = '2026-10-01'
+        third = self.create_order(october)
+        self.assertEqual(first['number'], '202609-001')
+        self.assertEqual(second['number'], '202609-002')
+        self.assertEqual(third['number'], '202610-001')
+
+        response = self.client.get(f"/api/trading/orders/{first['id']}/export/")
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(f"order_{first['number']}.xlsx", response['Content-Disposition'])
+        with ZipFile(BytesIO(response.content)) as archive:
+            workbook_xml = archive.read('xl/workbook.xml').decode()
+            self.assertIn('订单汇总', workbook_xml)
+            self.assertIn('产品明细', workbook_xml)
+            product_xml = archive.read('xl/worksheets/sheet2.xml').decode()
+            self.assertIn('VLSFO', product_xml)
+
     def test_admin_can_void_from_order_status_and_void_cannot_be_reopened(self):
         order = self.create_order(dict(order_payload(False), save_as_draft=True))
         response = self.write(
@@ -173,6 +195,11 @@ class TradingTests(TestCase):
         self.assertEqual((first_line.oil_reference_id,first_line.oil),(oil.pk,oil.name))
         self.assertEqual(order['customer_reference'],customer.pk)
         self.assertEqual(order['lines'][0]['oil_reference'],oil.pk)
+
+        response = self.client.delete(f'/api/reference/{customer.pk}/')
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()['code'], 'reference_in_use')
+        self.assertTrue(Reference.objects.filter(pk=customer.pk).exists())
 
     def test_order_rejects_reference_of_wrong_kind_and_allows_manual_names(self):
         oil=Reference.objects.create(kind='oil',code='OIL-WRONG',name='Not a customer')
