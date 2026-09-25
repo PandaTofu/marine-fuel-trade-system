@@ -3,11 +3,11 @@ from collections import defaultdict
 from django.core.management.base import BaseCommand
 from django.db import transaction
 
-from trading.models import Order
+from trading.models import Order, OrderDocument
 
 
 class Command(BaseCommand):
-    help = 'Renumber orders as YYYYMM-001, restarting the sequence each month.'
+    help = 'Renumber orders as SOYYYYMMDD001, restarting the sequence each day.'
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -22,11 +22,11 @@ class Command(BaseCommand):
             sequences = defaultdict(int)
             mapping = []
             for order in orders:
-                prefix = order.order_date.strftime('%Y%m')
+                prefix = order.order_date.strftime('SO%Y%m%d')
                 sequences[prefix] += 1
                 if sequences[prefix] > 999:
-                    raise ValueError(f'Month {prefix} contains more than 999 orders.')
-                mapping.append((order, f'{prefix}-{sequences[prefix]:03d}'))
+                    raise ValueError(f'Day {prefix} contains more than 999 orders.')
+                mapping.append((order, f'{prefix}{sequences[prefix]:03d}'))
 
             for order, target in mapping:
                 marker = 'unchanged' if order.number == target else f'{order.number or "(empty)"} -> {target}'
@@ -43,4 +43,15 @@ class Command(BaseCommand):
                 Order.objects.filter(pk=order.pk).update(number=f'T{order.pk:09d}')
             for order, target in mapping:
                 Order.objects.filter(pk=order.pk).update(number=target)
+                for document in OrderDocument.objects.filter(order=order):
+                    content = dict(document.content or {})
+                    if document.kind == 'contract':
+                        content['reference'] = f'{target}-CON'
+                    else:
+                        content.update({
+                            'reference_number': f'{target}-INV',
+                            'invoice_number': f'{target}-INV',
+                            'remittance_reference': f'{target}-INV',
+                        })
+                    OrderDocument.objects.filter(pk=document.pk).update(content=content)
             self.stdout.write(self.style.SUCCESS(f'Renumbered {len(mapping)} order(s).'))

@@ -6,8 +6,8 @@ import { api } from "../api";
 import { ErrorBox, Language } from "../components";
 import { downloadOrderDocument } from "./shared";
 
-type Kind = "contract" | "invoice";
-type DocumentResponse = {
+export type DocumentKind = "contract" | "invoice";
+export type DocumentResponse = {
   content: Record<string, unknown>;
   updated_at: string | null;
   updated_by: string | null;
@@ -17,10 +17,12 @@ export function DocumentEditor({
   orderId,
   kind,
   onClose,
+  onSaved,
 }: {
   orderId: number;
-  kind: Kind;
+  kind: DocumentKind;
   onClose: () => void;
+  onSaved?: () => void;
 }) {
   const { t } = useTranslation();
   const [form] = Form.useForm();
@@ -47,6 +49,7 @@ export function DocumentEditor({
       await api(`trading/orders/${orderId}/documents/${kind}/`, "PUT", {
         content,
       });
+      onSaved?.();
       if (download) await downloadOrderDocument(orderId, kind);
       else onClose();
     } catch (e) {

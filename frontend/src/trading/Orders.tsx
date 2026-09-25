@@ -48,6 +48,7 @@ export default function Orders({
   const [activeTab, setActiveTab] = useState("list");
   const [newOrderOpen, setNewOrderOpen] = useState(false);
   const [exportError, setExportError] = useState("");
+  const [documentRevision, setDocumentRevision] = useState(0);
   const r = useResource<OrderList>(
     "trading/orders/?" + query({ ...filters, page }),
   );
@@ -70,7 +71,13 @@ export default function Orders({
       width: 195,
       render: (v: string, o: Order) => (
         <Space direction="vertical" size={2}>
-          <Button type="link" onClick={() => setDetail(o)}>
+          <Button
+            type="link"
+            onClick={() => {
+              setDetail(o);
+              if (!settlements) setActiveTab("order-detail");
+            }}
+          >
             {v}
           </Button>
           <Status value={o.state} />
@@ -201,6 +208,24 @@ export default function Orders({
       onOk: closeNewOrder,
     });
   };
+  const closeOrderEditor = () => {
+    setEditor(null);
+    setActiveTab(detail ? "order-detail" : "list");
+  };
+  const requestCloseOrderEditor = () => {
+    modal.confirm({
+      title: t("biz.unsavedOrderTitle"),
+      content: t("biz.unsavedOrderHint"),
+      okText: t("biz.discardChanges"),
+      cancelText: t("biz.continueEditing"),
+      okButtonProps: { danger: true },
+      onOk: closeOrderEditor,
+    });
+  };
+  const closeOrderDetail = () => {
+    setDetail(null);
+    if (activeTab === "order-detail") setActiveTab("list");
+  };
   return (
     <>
       {!settlements && (
@@ -210,13 +235,30 @@ export default function Orders({
           hideAdd
           activeKey={activeTab}
           onChange={setActiveTab}
-          onEdit={(_, action) => {
-            if (action === "remove") requestCloseNewOrder();
+          onEdit={(targetKey, action) => {
+            if (action !== "remove") return;
+            if (targetKey === "new-order") requestCloseNewOrder();
+            if (targetKey === "edit-order") requestCloseOrderEditor();
+            if (targetKey === "order-detail") closeOrderDetail();
           }}
           items={[
             { key: "list", label: t("biz.orders"), closable: false },
             ...(newOrderOpen
               ? [{ key: "new-order", label: t("biz.createOrder"), closable: true }]
+              : []),
+            ...(detail
+              ? [{
+                  key: "order-detail",
+                  label: `${t("biz.detail")} · ${detail.number}`,
+                  closable: true,
+                }]
+              : []),
+            ...(editor
+              ? [{
+                  key: "edit-order",
+                  label: `${t("biz.edit")} · ${editor.number}`,
+                  closable: true,
+                }]
               : []),
           ]}
         />
@@ -370,18 +412,35 @@ export default function Orders({
             onClose={closeNewOrder}
             onSaved={(saved) => {
               refresh();
-              closeNewOrder();
+              setNewOrderOpen(false);
               setDetail(saved);
+              setActiveTab("order-detail");
             }}
           />
         </div>
       )}
-      {editor && (
+      {editor && !settlements && (
+        <div hidden={activeTab !== "edit-order"}>
+          <OrderEditor
+            embedded
+            order={editor}
+            onClose={closeOrderEditor}
+            onSaved={(saved) => {
+              refresh();
+              setEditor(null);
+              setDetail(saved);
+              setActiveTab("order-detail");
+            }}
+          />
+        </div>
+      )}
+      {editor && settlements && (
         <OrderEditor
           order={editor}
           onClose={() => setEditor(null)}
           onSaved={(saved) => {
             refresh();
+            setEditor(null);
             setDetail(saved);
           }}
         />
@@ -393,24 +452,47 @@ export default function Orders({
           onSaved={refresh}
         />
       )}
-      {detail && (
+      {detail && !settlements && (
+        <div hidden={activeTab !== "order-detail"}>
+          <OrderDetail
+            key={`${detail.id}-${detail.version}-${documentRevision}`}
+            embedded
+            order={detail}
+            onClose={closeOrderDetail}
+            onEdit={(current) => {
+              setEditor(current);
+              setActiveTab("edit-order");
+            }}
+            onChanged={(updated) => {
+              setDetail(updated);
+              refresh();
+            }}
+            onDocumentEdit={(kind) =>
+              setDocument({ orderId: detail.id, kind })
+            }
+          />
+        </div>
+      )}
+      {detail && settlements && (
         <OrderDetail
+          key={`${detail.id}-${detail.version}-${documentRevision}`}
           order={detail}
           onClose={() => setDetail(null)}
-          onEdit={(current) => {
-            setDetail(null);
-            setEditor(current);
-          }}
+          onEdit={(current) => setEditor(current)}
           onChanged={(updated) => {
             setDetail(updated);
             refresh();
           }}
+          onDocumentEdit={(kind) =>
+            setDocument({ orderId: detail.id, kind })
+          }
         />
       )}
       {document && (
         <DocumentEditor
           {...document}
           onClose={() => setDocument(null)}
+          onSaved={() => setDocumentRevision((value) => value + 1)}
         />
       )}
     </>

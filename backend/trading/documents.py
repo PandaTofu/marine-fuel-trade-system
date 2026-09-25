@@ -55,11 +55,12 @@ def document_defaults(order, kind):
     if order.estimated_start_date and order.estimated_end_date:
         eta = f'{day(order.estimated_start_date)} - {day(order.estimated_end_date)}'
     if kind == 'contract':
+        document_number = f'{number}-CON'
         minimum = sum((rounded_money(line.ordered_qty_min * line.sale_price) for line in order.lines.all()), Decimal('0'))
         maximum = sum((rounded_money(line.ordered_qty_max * line.sale_price) for line in order.lines.all()), Decimal('0'))
         total = money(minimum) if minimum == maximum else f'{money(minimum)} - {money(maximum)}'
         return {
-            'reference': number, 'date': day(order.order_date, True),
+            'reference': document_number, 'date': day(order.order_date, True),
             'intro': 'Following your orders and further our telecom, we confirm having arranged the following bunkers.',
             'vessel': order.vessel, 'imo': order.imo, 'port': order.port, 'eta': eta,
             'buyer': order.customer, 'seller': COMPANY, 'supplier': order.supplier,
@@ -78,8 +79,9 @@ def document_defaults(order, kind):
             'terms': '\n'.join(SALES_TERMS),
             'closing': 'Please confirm stem in order.\n\nBest Regards,\n' + COMPANY,
         }
+    document_number = f'{number}-INV'
     return {
-        'reference_number': number, 'invoice_number': number,
+        'reference_number': document_number, 'invoice_number': document_number,
         'customer': order.customer, 'vessel': order.vessel, 'imo': order.imo,
         'port': order.port, 'invoice_date': day(timezone.localdate()),
         'delivery_date': day(order.actual_date), 'due_date': day(numbers['customer_due']),
@@ -95,7 +97,7 @@ def document_defaults(order, kind):
         'beneficiary_address': COMPANY_ADDRESS, 'bank_name': 'DBS BANK (HONGKONG) LIMITED',
         'account_number': '002836028', 'swift': 'DHBKHKHH',
         'bank_address': "G/F, The Center, 99 Queen's Road Central, Central, Hong Kong",
-        'remittance_reference': number,
+        'remittance_reference': document_number,
     }
 
 

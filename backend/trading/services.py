@@ -7,8 +7,9 @@ from django.db.models import F
 from django.utils import timezone
 from rest_framework.exceptions import APIException
 from core.models import Audit
-from .models import Account, Order, OrderLine, Entry, OrderRevision, Mutation, WriteLock
+from .models import Account, Order, OrderLine, Entry, OrderRevision, OrderDocument, Mutation, WriteLock
 from .calculations import COMPONENTS, FINANCIAL_ORDER_STATES, EXCLUDED_ORDER_STATES, ZERO, money, text, totals, settlement_totals, order_numbers
+from .documents import document_defaults
 from .serializers import OrderSerializer, AccountSerializer
 
 
@@ -209,17 +210,18 @@ def sync_order_state(order):
 
 
 def next_order_number(order_date):
-    prefix = order_date.strftime('%Y%m')
-    latest = (Order.objects.filter(number__startswith=f'{prefix}-')
+    prefix = order_date.strftime('SO%Y%m%d')
+    latest = (Order.objects.filter(number__startswith=prefix)
               .order_by('-number').values_list('number', flat=True).first())
-    sequence = int(latest.rsplit('-', 1)[1]) + 1 if latest else 1
+    sequence = int(latest[-3:]) + 1 if latest else 1
     if sequence > 999:
-        raise BusinessError('monthly_order_limit')
-    return f'{prefix}-{sequence:03d}'
+        raise BusinessError('daily_order_limit')
+    return f'{prefix}{sequence:03d}'
 
 
 def save_order(actor, payload, pk=None):
     row = locked_order(pk) if pk else None
+    creating = row is None
     previous_state = row.state if row else None
     if row:
         check_version(row, payload.get('version'))
@@ -258,6 +260,11 @@ def save_order(actor, payload, pk=None):
     if lines is not None:
         row.lines.all().delete()
         OrderLine.objects.bulk_create([OrderLine(order=row, position=i, **line) for i, line in enumerate(lines)])
+    if creating:
+        OrderDocument.objects.bulk_create([
+            OrderDocument(order=row, kind=kind, content=document_defaults(row, kind), updated_by=actor)
+            for kind in ('invoice', 'contract')
+        ])
     if settlements and not save_as_draft:
         paid = settlement_totals(row.entries.all())
         if any(settlements.get(key, paid[key]) != paid[key] for key in COMPONENTS):

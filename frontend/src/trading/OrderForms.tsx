@@ -11,14 +11,17 @@ import {
   Select,
   Space,
   Table,
+  Tag,
   Tabs,
   Tooltip,
 } from "antd";
 import {
   DeleteOutlined,
+  DownloadOutlined,
   EditOutlined,
   EyeOutlined,
   PlusOutlined,
+  SendOutlined,
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { useTranslation } from "react-i18next";
@@ -36,7 +39,9 @@ import {
   today,
   useCommand,
   useResource,
+  downloadOrderDocument,
 } from "./shared";
+import type { DocumentKind, DocumentResponse } from "./DocumentEditor";
 import {
   components,
   type Order,
@@ -1013,11 +1018,15 @@ export function OrderDetail({
   onClose,
   onEdit,
   onChanged,
+  onDocumentEdit,
+  embedded = false,
 }: {
   order: Order;
   onClose: () => void;
   onEdit: (order: Order) => void;
   onChanged: (order: Order) => void;
+  onDocumentEdit: (kind: DocumentKind) => void;
+  embedded?: boolean;
 }) {
   const { t } = useTranslation();
   const { user } = useAuth();
@@ -1027,35 +1036,102 @@ export function OrderDetail({
   const ledger = useResource<LedgerList>(
     `trading/ledger/?order=${order.id}&page_size=200`,
   );
+  const invoiceDocument = useResource<DocumentResponse>(
+    `trading/orders/${order.id}/documents/invoice/`,
+  );
+  const contractDocument = useResource<DocumentResponse>(
+    `trading/orders/${order.id}/documents/contract/`,
+  );
   const [snapshot, setSnapshot] = useState<Order>(order),
-    [payment, setPayment] = useState(false);
+    [payment, setPayment] = useState(false),
+    [documentError, setDocumentError] = useState(""),
+    [downloading, setDownloading] = useState<DocumentKind | null>(null);
   const payments = (ledger.data?.results || []).filter((entry) =>
     ["customer_receipt", "supplier_payment", "commission"].includes(
       entry.category,
     ),
   );
-  return (
-    <Modal
-      open
-      width={1100}
-      title={
-        <div className="order-modal-title">
-          <Space>
-            {order.number}
-            <Language />
-          </Space>
+  const title = (
+    <div className="order-modal-title">
+      <Space>
+        {order.number}
+        <Language />
+      </Space>
+      <Button
+        icon={<EditOutlined />}
+        disabled={order.state === "void"}
+        onClick={() => onEdit(order)}
+      >
+        {t("biz.edit")}
+      </Button>
+    </div>
+  );
+  const documentCard = (
+    kind: DocumentKind,
+    resource: typeof invoiceDocument,
+  ) => {
+    const invoice = kind === "invoice";
+    const updatedAt = resource.data?.updated_at;
+    const number = String(
+      resource.data?.content[invoice ? "invoice_number" : "reference"] ||
+        `${order.number}-${invoice ? "INV" : "CON"}`,
+    );
+    return (
+      <article className="order-document-row">
+        <div className="order-document-info">
+          <div className="order-document-heading">
+            <Tag color={invoice ? "blue" : "green"}>
+              {t(invoice ? "biz.salesInvoice" : "biz.salesContract")}
+            </Tag>
+            <strong>{number}</strong>
+          </div>
+          <div className="order-document-meta">
+            <span>
+              {t("biz.generatedAt")}: {updatedAt ? new Date(updatedAt).toLocaleString() : "—"}
+            </span>
+            <span>
+              {t("biz.generatedBy")}: {resource.data?.updated_by || "—"}
+            </span>
+          </div>
+          <span className="muted">{t("biz.notSent")}</span>
+        </div>
+        <Space className="order-document-actions" wrap>
           <Button
+            type="link"
             icon={<EditOutlined />}
-            disabled={order.state === "void"}
-            onClick={() => onEdit(order)}
+            onClick={() => onDocumentEdit(kind)}
           >
             {t("biz.edit")}
           </Button>
-        </div>
-      }
-      onCancel={onClose}
-      footer={null}
-    >
+          <Button
+            type="link"
+            icon={<DownloadOutlined />}
+            loading={downloading === kind}
+            onClick={async () => {
+              setDocumentError("");
+              setDownloading(kind);
+              try {
+                await downloadOrderDocument(order.id, kind);
+              } catch (error) {
+                setDocumentError((error as Error).message);
+              } finally {
+                setDownloading(null);
+              }
+            }}
+          >
+            {t("biz.downloadPdf")}
+          </Button>
+          <Tooltip title={t("biz.sendComingSoon")}>
+            <Button type="primary" icon={<SendOutlined />} disabled>
+              {t(invoice ? "biz.sendInvoice" : "biz.sendContract")}
+            </Button>
+          </Tooltip>
+        </Space>
+      </article>
+    );
+  };
+  const content = (
+    <>
       <Tabs
         items={[
           {
@@ -1248,6 +1324,27 @@ export function OrderDetail({
             ),
           },
           {
+            key: "documents",
+            label: t("biz.contractsAndInvoices"),
+            children: (
+              <div className="order-documents-panel">
+                <ErrorBox
+                  error={
+                    documentError ||
+                    invoiceDocument.error ||
+                    contractDocument.error
+                  }
+                  retry={() => {
+                    invoiceDocument.refresh();
+                    contractDocument.refresh();
+                  }}
+                />
+                {documentCard("invoice", invoiceDocument)}
+                {documentCard("contract", contractDocument)}
+              </div>
+            ),
+          },
+          {
             key: "history",
             label: t("biz.history"),
             children: (
@@ -1300,6 +1397,25 @@ export function OrderDetail({
           }}
         />
       )}
+    </>
+  );
+  if (embedded) {
+    return (
+      <section className="order-detail-page">
+        <header className="order-detail-page-header">{title}</header>
+        {content}
+      </section>
+    );
+  }
+  return (
+    <Modal
+      open
+      width={1100}
+      title={title}
+      onCancel={onClose}
+      footer={null}
+    >
+      {content}
     </Modal>
   );
 }

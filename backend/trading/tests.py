@@ -96,8 +96,17 @@ class TradingTests(TestCase):
 
     def test_document_edits_are_saved_separately_from_order(self):
         order = self.create_order()
+        self.assertEqual(
+            set(OrderDocument.objects.filter(order_id=order['id']).values_list('kind', flat=True)),
+            {'invoice', 'contract'},
+        )
+        self.assertEqual(
+            OrderDocument.objects.get(order_id=order['id'], kind='invoice').content['invoice_number'],
+            f"{order['number']}-INV",
+        )
         path = f"/api/trading/orders/{order['id']}/documents/contract/"
         defaults = self.client.get(path).json()['content']
+        self.assertEqual(defaults['reference'], f"{order['number']}-CON")
         defaults['buyer'] = 'Edited PDF buyer only'
         defaults['terms'] = 'Term one\nTerm two'
         response = self.client.put(path, {'content': defaults}, format='json')
@@ -107,17 +116,23 @@ class TradingTests(TestCase):
         self.assertEqual(self.client.get(path).json()['content']['buyer'], 'Edited PDF buyer only')
         self.assertTrue(self.client.get(f"/api/trading/orders/{order['id']}/contract/").content.startswith(b'%PDF-'))
 
-    def test_order_numbers_restart_each_month_and_excel_has_two_sheets(self):
+        changed = order_payload(False)
+        changed.update(version=order['version'], customer='更新后的订单客户')
+        response = self.write(f"orders/{order['id']}/", changed, method='patch')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(OrderDocument.objects.get(order_id=order['id'], kind='contract').content['buyer'], 'Edited PDF buyer only')
+
+    def test_order_numbers_restart_each_day_and_excel_has_two_sheets(self):
         september = order_payload(False)
-        september['order_date'] = '2026-09-30'
+        september['order_date'] = '2026-09-25'
         first = self.create_order(september)
         second = self.create_order(september)
-        october = order_payload(False)
-        october['order_date'] = '2026-10-01'
-        third = self.create_order(october)
-        self.assertEqual(first['number'], '202609-001')
-        self.assertEqual(second['number'], '202609-002')
-        self.assertEqual(third['number'], '202610-001')
+        next_day = order_payload(False)
+        next_day['order_date'] = '2026-09-26'
+        third = self.create_order(next_day)
+        self.assertEqual(first['number'], 'SO20260925001')
+        self.assertEqual(second['number'], 'SO20260925002')
+        self.assertEqual(third['number'], 'SO20260926001')
 
         response = self.client.get(f"/api/trading/orders/{first['id']}/export/")
         self.assertEqual(response.status_code, 200)
