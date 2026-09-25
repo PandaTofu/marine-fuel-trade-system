@@ -58,7 +58,7 @@ export default function References() {
     form.setFieldsValue(row || { is_active: true });
   };
   const visible = rows.filter((r) =>
-    [r.name, r.code || ""].some((s) =>
+    [r.name, r.code || "", r.email || "", r.swift_code || "", r.iban || ""].some((s) =>
       s.toLowerCase().includes(query.toLowerCase()),
     ),
   );
@@ -122,7 +122,7 @@ export default function References() {
           rowKey="id"
           loading={loading}
           dataSource={error ? [] : visible}
-          scroll={{ x: 760 }}
+          scroll={{ x: ["customer", "supplier"].includes(kind) ? 1450 : 760 }}
           locale={{ emptyText: t("empty") }}
           columns={[
             { title: t("code"), dataIndex: "code", width: 150 },
@@ -131,6 +131,15 @@ export default function References() {
               dataIndex: "name",
               render: (name: string) => <strong>{name}</strong>,
             },
+            ...(["customer", "supplier"].includes(kind)
+              ? [
+                  { title: t("email"), dataIndex: "email", width: 210 },
+                  { title: t("swiftCode"), dataIndex: "swift_code", width: 150 },
+                  { title: t("iban"), dataIndex: "iban", width: 190 },
+                  { title: t("bankCode"), dataIndex: "bank_code", width: 140 },
+                  { title: t("bankAddress"), dataIndex: "bank_address", width: 280 },
+                ]
+              : []),
             {
               title: t("is_active"),
               render: (_, r) => (
@@ -200,6 +209,27 @@ export default function References() {
           >
             <Input maxLength={120} />
           </Form.Item>
+          {["customer", "supplier"].includes(kind) && (
+            <>
+              <Form.Item name="email" label={t("email")} rules={[{ type: "email" }]}>
+                <Input maxLength={254} />
+              </Form.Item>
+              <div className="business-form-grid adaptive">
+                <Form.Item name="swift_code" label={t("swiftCode")}>
+                  <Input maxLength={40} />
+                </Form.Item>
+                <Form.Item name="iban" label={t("iban")}>
+                  <Input maxLength={80} />
+                </Form.Item>
+                <Form.Item name="bank_code" label={t("bankCode")}>
+                  <Input maxLength={40} />
+                </Form.Item>
+              </div>
+              <Form.Item name="bank_address" label={t("bankAddress")}>
+                <Input.TextArea rows={3} maxLength={300} />
+              </Form.Item>
+            </>
+          )}
           <Form.Item
             name="is_active"
             label={t("is_active")}

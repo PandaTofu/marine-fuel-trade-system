@@ -93,6 +93,20 @@ class FoundationTests(TestCase):
         admin.patch(url, {'is_active':True}, format='json')
         self.assertEqual(operator.get('/api/company/').status_code, 403)
 
+    def test_customer_and_supplier_store_contact_and_bank_details(self):
+        client = self.client_for('operator')
+        for kind in ('customer', 'supplier'):
+            payload = {
+                'kind': kind, 'name': f'Banked {kind}', 'email': f'{kind}@example.com',
+                'swift_code': 'DBSSHKHH', 'iban': 'HK123456', 'bank_code': '016',
+                'bank_address': 'Central, Hong Kong',
+            }
+            response = client.post('/api/reference/', payload, format='json')
+            self.assertEqual(response.status_code, 201, response.data)
+            row = response.json()
+            self.assertEqual(row['swift_code'], 'DBSSHKHH')
+            self.assertEqual(row['bank_address'], 'Central, Hong Kong')
+
     def test_self_admin_protection(self):
         c = self.client_for()
         for values in [{'is_active':False},{'role':'operator'}]:
@@ -148,6 +162,7 @@ class FoundationTests(TestCase):
         self.assertEqual(company.name, 'Bond Shipping and Trading Limited')
         self.assertEqual(company.email, 'bunker@bond-shipping.com')
         self.assertIn('HANGWAI IND CTR', company.address)
+        c = self.client_for()
         self.assertEqual(c.post('/api/auth/language/',{'language':'en'},format='json').status_code,200)
         self.assertEqual(c.get('/api/auth/me/').json()['language'],'en')
         self.assertEqual(c.post('/api/auth/language/',{'language':'invalid'},format='json').status_code,400)

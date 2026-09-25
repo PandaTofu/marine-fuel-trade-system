@@ -48,6 +48,57 @@ def order_number(order):
     return f'BO-{order.order_date:%Y%m%d}-{order.pk:06d}'
 
 
+def document_defaults(order, kind):
+    number = order_number(order)
+    numbers = order_numbers(order)
+    eta = ''
+    if order.estimated_start_date and order.estimated_end_date:
+        eta = f'{day(order.estimated_start_date)} - {day(order.estimated_end_date)}'
+    if kind == 'contract':
+        minimum = sum((rounded_money(line.ordered_qty_min * line.sale_price) for line in order.lines.all()), Decimal('0'))
+        maximum = sum((rounded_money(line.ordered_qty_max * line.sale_price) for line in order.lines.all()), Decimal('0'))
+        total = money(minimum) if minimum == maximum else f'{money(minimum)} - {money(maximum)}'
+        return {
+            'reference': number, 'date': day(order.order_date, True),
+            'intro': 'Following your orders and further our telecom, we confirm having arranged the following bunkers.',
+            'vessel': order.vessel, 'imo': order.imo, 'port': order.port, 'eta': eta,
+            'buyer': order.customer, 'seller': COMPANY, 'supplier': order.supplier,
+            'products': [
+                {'name': line.oil, 'quantity': range_text(line),
+                 'unit_price': f'{money(line.sale_price)} / MT',
+                 'amount': money(rounded_money(line.ordered_qty_min * line.sale_price)) if line.ordered_qty_min == line.ordered_qty_max else f'{money(rounded_money(line.ordered_qty_min * line.sale_price))} - {money(rounded_money(line.ordered_qty_max * line.sale_price))}'}
+                for line in order.lines.all()
+            ],
+            'total': total,
+            'additional_cost': '\n'.join(
+                f'{name}: {money(amount)}' for name, amount in [
+                    ('Customer bank fee', order.customer_fee), ('Barge fee', order.berth_fee),
+                    ('Exceptional fee', order.exceptional_fee)] if amount),
+            'payment': order.customer_term_description,
+            'terms': '\n'.join(SALES_TERMS),
+            'closing': 'Please confirm stem in order.\n\nBest Regards,\n' + COMPANY,
+        }
+    return {
+        'reference_number': number, 'invoice_number': number,
+        'customer': order.customer, 'vessel': order.vessel, 'imo': order.imo,
+        'port': order.port, 'invoice_date': day(timezone.localdate()),
+        'delivery_date': day(order.actual_date), 'due_date': day(numbers['customer_due']),
+        'customer_reference': '',
+        'products': [
+            {'name': line.oil, 'quantity': f'{line.actual_qty:.3f}' if line.actual_qty is not None else '',
+             'unit': 'MT' if line.actual_qty is not None else '',
+             'unit_price': f'{rounded_money(line.sale_price):.2f}',
+             'amount': f'{rounded_money((line.actual_qty or 0) * line.sale_price):.2f}' if line.actual_qty is not None else ''}
+            for line in order.lines.all()
+        ],
+        'currency': 'USD', 'beneficiary_name': COMPANY.upper(),
+        'beneficiary_address': COMPANY_ADDRESS, 'bank_name': 'DBS BANK (HONGKONG) LIMITED',
+        'account_number': '002836028', 'swift': 'DHBKHKHH',
+        'bank_address': "G/F, The Center, 99 Queen's Road Central, Central, Hong Kong",
+        'remittance_reference': number,
+    }
+
+
 def logo_path():
     return Path(settings.BASE_DIR).parent / 'frontend' / 'public' / 'assets' / 'company-logo.png'
 
@@ -90,36 +141,36 @@ def label_table(rows, widths=(33*mm, 55*mm, 34*mm, 55*mm)):
     return table
 
 
-def invoice_pdf(order):
+def invoice_pdf(order, content=None):
     sheet, body, small = styles()
-    number = order_number(order)
-    numbers = order_numbers(order)
+    data = {**document_defaults(order, 'invoice'), **(content or {})}
+    number = data['reference_number']
     story = header(COMPANY_ADDRESS, COMPANY_EMAIL)
     story += [Paragraph('<u><b>SALES INVOICE</b></u>', sheet['Heading3']), Spacer(1, 5*mm),
               Paragraph('Master and Owners and /or Managing Owners and/or Operators and/or Charterers and /or Buyers', body),
-              Paragraph(f'of <b>{value(order.vessel)}</b> and:', body), Paragraph(f'<b>{value(order.customer)}</b>', body), Spacer(1, 3*mm)]
+              Paragraph(f'of <b>{value(data["vessel"])}</b> and:', body), Paragraph(f'<b>{value(data["customer"])}</b>', body), Spacer(1, 3*mm)]
     story.append(label_table([
-        ('Reference Number',number,'Invoice Number',number),('Vessel Name',order.vessel,'Invoicing Date',day(timezone.localdate())),
-        ('IMO Number',order.imo,'Delivery Date',day(order.actual_date)),('Port of Delivery',order.port,'Due Date',day(numbers['customer_due'])),
-        ('Customer Reference','','',''),
+        ('Reference Number',number,'Invoice Number',data['invoice_number']),('Vessel Name',data['vessel'],'Invoicing Date',data['invoice_date']),
+        ('IMO Number',data['imo'],'Delivery Date',data['delivery_date']),('Port of Delivery',data['port'],'Due Date',data['due_date']),
+        ('Customer Reference',data['customer_reference'],'',''),
     ]))
     rows=[[Paragraph('<b>Product</b>',body),Paragraph('<b>Quantity</b>',body),Paragraph('<b>Unit</b>',body),Paragraph('<b>Unit Price</b>',body),Paragraph('<b>Value</b>',body)]]
     subtotal=Decimal('0')
-    for line in order.lines.all():
-        has_quantity=line.actual_qty is not None
-        amount=rounded_money((line.actual_qty or 0)*line.sale_price)
-        if has_quantity: subtotal += amount
-        rows.append([Paragraph(value(line.oil),body),f'{line.actual_qty:.3f}' if has_quantity else '', 'MT' if has_quantity else '', money(line.sale_price), money(amount) if has_quantity else ''])
+    for line in data['products']:
+        try: amount = Decimal(str(line.get('amount') or '0'))
+        except Exception: amount = Decimal('0')
+        subtotal += amount
+        rows.append([Paragraph(value(line.get('name')),body),value(line.get('quantity')),value(line.get('unit')),value(line.get('unit_price')),money(amount) if line.get('amount') else ''])
     products=Table(rows,colWidths=[63*mm,25*mm,18*mm,34*mm,37*mm],repeatRows=1)
     products.setStyle(TableStyle([('LINEBELOW',(0,0),(-1,0),.6,colors.black),('ALIGN',(1,0),(-1,-1),'RIGHT'),('VALIGN',(0,0),(-1,-1),'TOP'),('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5)]))
     story += [Spacer(1,2*mm),products]
     totals=Table([['SUBTOTAL',money(subtotal)],['VAT AT 0 %',money(0)],['TOTAL AMOUNT',money(subtotal)]],colWidths=[140*mm,37*mm])
     totals.setStyle(TableStyle([('ALIGN',(1,0),(-1,-1),'RIGHT'),('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),('FONTNAME',(0,2),(-1,2),'Helvetica-Bold'),('LINEABOVE',(0,0),(-1,0),.6,colors.black),('LINEBELOW',(0,2),(-1,2),.6,colors.black)]))
     story += [Spacer(1,2*mm),totals,Spacer(1,3*mm)]
-    bank=[('PAYMENT INSTRUCTIONS','BY ELECTRONIC FUND TRANSFER'),('CURRENCY','USD'),('BENEFICIARY NAME',COMPANY.upper()),
-          ('BENEFICIARY ADDRESS','ROOM E18, NO.107, 1/F, BLK A, HANGWAI IND CTR, NO.6, KIN TAI ST, TUEN MUN, N.T., HONG KONG'),
-          ('BANK NAME','DBS BANK (HONGKONG) LIMITED'),('ACCOUNT NR / IBAN NR','002836028'),('SWIFT','DHBKHKHH'),
-          ('BANK ADDRESS',"G/F, The Center, 99 Queen's Road Central, Central, Hong Kong"),('REMITTANCE REFERENCE',number)]
+    bank=[('PAYMENT INSTRUCTIONS','BY ELECTRONIC FUND TRANSFER'),('CURRENCY',data['currency']),('BENEFICIARY NAME',data['beneficiary_name']),
+          ('BENEFICIARY ADDRESS',data['beneficiary_address']), ('BANK NAME',data['bank_name']),
+          ('ACCOUNT NR / IBAN NR',data['account_number']),('SWIFT',data['swift']),
+          ('BANK ADDRESS',data['bank_address']),('REMITTANCE REFERENCE',data['remittance_reference'])]
     bank_table=Table([[Paragraph(value(k),small),Paragraph(f'<b>{value(v)}</b>',small)] for k,v in bank],colWidths=[43*mm,134*mm])
     bank_table.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'TOP'),('LEFTPADDING',(0,0),(-1,-1),1),('TOPPADDING',(0,0),(-1,-1),1),('BOTTOMPADDING',(0,0),(-1,-1),1)]))
     story += [bank_table,Spacer(1,2*mm),Paragraph('LATE PAYMENT WILL BE CHARGED WITH 2% INTEREST MONTHLY PRORATED FROM THE DUE DATE.<br/><b>ALL BANK CHARGES ARE FOR SENDERS ACCOUNT</b>',small),Spacer(1,3*mm),Paragraph('<b><font color="red">FRAUD PREVENTION</font> // IF THE BANK DETAILS DO NOT MATCH THE ALREADY REGISTERED<br/>PLEASE CONTACT US IMMEDIATELY</b>',small)]
@@ -132,32 +183,25 @@ def range_text(line):
     return f'{line.ordered_qty_min:.3f} - {line.ordered_qty_max:.3f} MT'
 
 
-def contract_pdf(order):
+def contract_pdf(order, content=None):
     sheet, body, small = styles()
-    number=order_number(order)
+    data = {**document_defaults(order, 'contract'), **(content or {})}
+    number=data['reference']
     story=header(COMPANY_ADDRESS, COMPANY_EMAIL)
     title=ParagraphStyle('ContractTitle',parent=sheet['Heading1'],fontName='Helvetica-Bold',fontSize=17,alignment=TA_CENTER,spaceAfter=8)
     right=ParagraphStyle('Right',parent=body,alignment=TA_RIGHT)
-    story += [Paragraph('BUNKER CONFIRMATION',title),Paragraph(f'Ref: {value(number)}<br/>Date: {day(order.order_date,True)}',right),Spacer(1,4*mm),
-              Paragraph('Following your orders and further our telecom, we confirm having arranged the following bunkers.',body),Spacer(1,3*mm),Paragraph('<b>Vessel Information</b>',sheet['Heading3'])]
-    eta=''
-    if order.estimated_start_date and order.estimated_end_date:
-        eta=f'{day(order.estimated_start_date)} - {day(order.estimated_end_date)}'
-    vessel=Table([[Paragraph(f'<b>{k}</b>',body),Paragraph(value(v),body)] for k,v in [('Vessel:',order.vessel),('IMO:',order.imo),('Port:',order.port),('ETA:',eta),('Buyer:',order.customer),('Seller:',COMPANY),('Supplier:',order.supplier)]],colWidths=[24*mm,153*mm])
+    story += [Paragraph('BUNKER CONFIRMATION',title),Paragraph(f'Ref: {value(number)}<br/>Date: {value(data["date"])}',right),Spacer(1,4*mm),
+              Paragraph(value(data['intro']),body),Spacer(1,3*mm),Paragraph('<b>Vessel Information</b>',sheet['Heading3'])]
+    vessel=Table([[Paragraph(f'<b>{k}</b>',body),Paragraph(value(v),body)] for k,v in [('Vessel:',data['vessel']),('IMO:',data['imo']),('Port:',data['port']),('ETA:',data['eta']),('Buyer:',data['buyer']),('Seller:',data['seller']),('Supplier:',data['supplier'])]],colWidths=[24*mm,153*mm])
     vessel.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'TOP'),('TOPPADDING',(0,0),(-1,-1),2),('BOTTOMPADDING',(0,0),(-1,-1),2)]))
     rows=[[Paragraph('<b>Product Name</b>',body),Paragraph('<b>Quantity</b>',body),Paragraph('<b>Price / Unit</b>',body),Paragraph('<b>Amount</b>',body)]]
-    minimum=maximum=Decimal('0')
-    for line in order.lines.all():
-        low=rounded_money(line.ordered_qty_min*line.sale_price); high=rounded_money(line.ordered_qty_max*line.sale_price); minimum+=low; maximum+=high
-        amount=money(low) if low==high else f'{money(low)} - {money(high)}'
-        rows.append([Paragraph(value(line.oil),body),range_text(line),f'{money(line.sale_price)} / MT',amount])
-    total=money(minimum) if minimum==maximum else f'{money(minimum)} - {money(maximum)}'
-    rows.append([Paragraph('<b>Total</b>',body),'','',Paragraph(f'<b>{value(total)}</b>',body)])
+    for line in data['products']:
+        rows.append([Paragraph(value(line.get('name')),body),value(line.get('quantity')),value(line.get('unit_price')),value(line.get('amount'))])
+    rows.append([Paragraph('<b>Total</b>', body), '', '', Paragraph(f'<b>{value(data["total"])}</b>', body)])
     products=Table(rows,colWidths=[53*mm,40*mm,45*mm,39*mm],repeatRows=1)
     products.setStyle(TableStyle([('GRID',(0,0),(-1,-1),.5,colors.HexColor('#30343a')),('BACKGROUND',(0,0),(-1,0),colors.HexColor('#edf1f4')),('BACKGROUND',(0,-1),(-1,-1),colors.HexColor('#edf1f4')),('ALIGN',(1,0),(-1,-1),'RIGHT'),('VALIGN',(0,0),(-1,-1),'TOP'),('TOPPADDING',(0,0),(-1,-1),5),('BOTTOMPADDING',(0,0),(-1,-1),5)]))
-    fees=[(name,amount) for name,amount in [('Customer bank fee',order.customer_fee),('Barge fee',order.berth_fee),('Exceptional fee',order.exceptional_fee)] if amount]
-    additional='<br/>'.join(f'{value(name)}: {money(amount)}' for name,amount in fees)
-    payment=value(order.customer_term_description)
-    terms='<br/>'.join(f'{index}. {value(term)}' for index,term in enumerate(SALES_TERMS,1))
-    story += [vessel,Spacer(1,3*mm),products,Spacer(1,3*mm),Paragraph('<b>Additional Cost</b>',sheet['Heading3']),Paragraph(additional,body),Spacer(1,2*mm),Paragraph('<b>Payment</b>',sheet['Heading3']),Paragraph(payment,body),Spacer(1,2*mm),Paragraph('<b>Terms of Sale</b>',sheet['Heading3']),Paragraph(terms,body),Spacer(1,5*mm),KeepTogether([Paragraph('<b>Please confirm stem in order.</b>',body),Spacer(1,4*mm),Paragraph('<b>Best Regards,</b>',body),Spacer(1,4*mm),Paragraph(f'<b>{COMPANY}</b>',body)]),Spacer(1,4*mm),Paragraph('Customer reference: &nbsp; · &nbsp; Payment instruction: BY ELECTRONIC FUND TRANSFER',small)]
+    additional='<br/>'.join(value(line) for line in str(data['additional_cost']).splitlines())
+    terms='<br/>'.join(f'{index}. {value(term)}' for index,term in enumerate(str(data['terms']).splitlines(),1) if term.strip())
+    closing='<br/>'.join(value(line) for line in str(data['closing']).splitlines())
+    story += [vessel,Spacer(1,3*mm),products,Spacer(1,3*mm),Paragraph('<b>Additional Cost</b>',sheet['Heading3']),Paragraph(additional,body),Spacer(1,2*mm),Paragraph('<b>Payment</b>',sheet['Heading3']),Paragraph(value(data['payment']),body),Spacer(1,2*mm),Paragraph('<b>Terms of Sale</b>',sheet['Heading3']),Paragraph(terms,body),Spacer(1,5*mm),KeepTogether([Paragraph(f'<b>{closing}</b>',body)]),Spacer(1,4*mm),Paragraph('Customer reference: &nbsp; · &nbsp; Payment instruction: BY ELECTRONIC FUND TRANSFER',small)]
     return pdf(story,f'Bunker Confirmation {number}')

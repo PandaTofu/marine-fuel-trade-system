@@ -20,6 +20,11 @@ class Reference(models.Model):
     kind = models.CharField(max_length=16, choices=KINDS)
     code = models.CharField(max_length=40, null=True, blank=True, editable=False)
     name = models.CharField(max_length=120)
+    email = models.EmailField(blank=True)
+    swift_code = models.CharField(max_length=40, blank=True)
+    iban = models.CharField(max_length=80, blank=True)
+    bank_code = models.CharField(max_length=40, blank=True)
+    bank_address = models.CharField(max_length=300, blank=True)
     is_active = models.BooleanField(default=True)
     updated_at = models.DateTimeField(auto_now=True)
 

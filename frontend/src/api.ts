@@ -55,5 +55,10 @@ export interface Reference {
   kind: string;
   code: string | null;
   name: string;
+  email: string;
+  swift_code: string;
+  iban: string;
+  bank_code: string;
+  bank_address: string;
   is_active: boolean;
 }

@@ -3,14 +3,15 @@ from decimal import Decimal
 from django.http import HttpResponse
 from django.db.models import Q
 from django.utils import timezone
+from core.models import Audit
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
-from .models import Account, Order, Entry
-from .serializers import OrderSerializer, EntrySerializer, SettlementSerializer, EntryInput, RefundInput, ReasonInput
+from .models import Account, Order, Entry, OrderDocument
+from .serializers import OrderSerializer, EntrySerializer, SettlementSerializer, EntryInput, RefundInput, ReasonInput, DocumentContentInput
 from .services import command, save_order, save_account, delete_account, account_data, account_balance, locked_order, settle, refund, manual_entry, reverse_entry, close_order, require_admin, BusinessError
 from .calculations import FINANCIAL_ORDER_STATES, EXCLUDED_ORDER_STATES, text, ZERO
 from .exports import workbook
-from .documents import invoice_pdf, contract_pdf
+from .documents import invoice_pdf, contract_pdf, document_defaults
 
 
 def validated(serializer_class, data):
@@ -110,10 +111,37 @@ def order_document(request, pk, kind):
         row = Order.objects.exclude(state='deleted').prefetch_related('lines', 'entries').get(pk=pk)
     except Order.DoesNotExist:
         raise BusinessError('not_found', 404)
-    content = invoice_pdf(row) if kind == 'invoice' else contract_pdf(row)
+    saved = OrderDocument.objects.filter(order=row, kind=kind).first()
+    document_content = saved.content if saved else None
+    content = invoice_pdf(row, document_content) if kind == 'invoice' else contract_pdf(row, document_content)
     response = HttpResponse(content, content_type='application/pdf')
     response['Content-Disposition'] = f'attachment; filename="{kind}_{row.order_date:%Y%m%d}_{row.pk:06d}.pdf"'
     return response
+
+
+@api_view(['GET', 'PUT'])
+def order_document_content(request, pk, kind):
+    if kind not in ('invoice', 'contract'):
+        raise BusinessError('not_found', 404)
+    try:
+        row = Order.objects.exclude(state='deleted').prefetch_related('lines', 'entries').get(pk=pk)
+    except Order.DoesNotExist:
+        raise BusinessError('not_found', 404)
+    saved = OrderDocument.objects.filter(order=row, kind=kind).first()
+    if request.method == 'GET':
+        return Response({
+            'kind': kind,
+            'content': saved.content if saved else document_defaults(row, kind),
+            'updated_at': saved.updated_at.isoformat() if saved else None,
+            'updated_by': saved.updated_by.username if saved else None,
+        })
+    content = validated(DocumentContentInput, request.data)['content']
+    saved, _ = OrderDocument.objects.update_or_create(
+        order=row, kind=kind,
+        defaults={'content': content, 'updated_by': request.user},
+    )
+    Audit.objects.create(actor=request.user, action=f'{kind}_updated', target=str(row.pk))
+    return Response({'kind': kind, 'content': saved.content, 'updated_at': saved.updated_at.isoformat(), 'updated_by': request.user.username})
 
 
 @api_view(['POST'])

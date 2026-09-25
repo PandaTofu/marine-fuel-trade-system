@@ -19,7 +19,7 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 from core.models import Reference, User
 from .calculations import state, totals, order_numbers
-from .models import Account, Entry, Mutation, Order, OrderRevision, WriteLock
+from .models import Account, Entry, Mutation, Order, OrderDocument, OrderRevision, WriteLock
 from .services import account_balance
 from .documents import SALES_TERMS
 
@@ -93,6 +93,35 @@ class TradingTests(TestCase):
             self.assertGreater(len(response.content),1000)
         self.assertEqual(len(SALES_TERMS),4)
         self.assertTrue(all(term.strip() for term in SALES_TERMS))
+
+    def test_document_edits_are_saved_separately_from_order(self):
+        order = self.create_order()
+        path = f"/api/trading/orders/{order['id']}/documents/contract/"
+        defaults = self.client.get(path).json()['content']
+        defaults['buyer'] = 'Edited PDF buyer only'
+        defaults['terms'] = 'Term one\nTerm two'
+        response = self.client.put(path, {'content': defaults}, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(OrderDocument.objects.get(order_id=order['id'], kind='contract').content['buyer'], 'Edited PDF buyer only')
+        self.assertEqual(Order.objects.get(pk=order['id']).customer, '客户 A')
+        self.assertEqual(self.client.get(path).json()['content']['buyer'], 'Edited PDF buyer only')
+        self.assertTrue(self.client.get(f"/api/trading/orders/{order['id']}/contract/").content.startswith(b'%PDF-'))
+
+    def test_admin_can_void_from_order_status_and_void_cannot_be_reopened(self):
+        order = self.create_order(dict(order_payload(False), save_as_draft=True))
+        response = self.write(
+            f"orders/{order['id']}/",
+            {'version': order['version'], 'desired_state': 'void', 'reason': 'Cancelled'},
+            method='patch',
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.json()['state'], 'void')
+        response = self.write(
+            f"orders/{order['id']}/",
+            {'version': response.json()['version'], 'desired_state': 'draft'},
+            method='patch',
+        )
+        self.assertEqual(response.status_code, 409)
 
     def test_full_multiline_money_and_due_date_fixture(self):
         with patch('trading.calculations.timezone.localdate',return_value=date(2026,9,12)):

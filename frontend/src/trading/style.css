@@ -88,6 +88,22 @@
   gap: 16px;
   padding-right: 28px;
 }
+.order-workspace-tabs {
+  margin: -8px 0 18px;
+}
+.order-workspace-tabs .ant-tabs-nav {
+  margin-bottom: 0;
+}
+.order-editor-page {
+  padding: 22px;
+  border: 1px solid #dce5ea;
+  border-radius: 0 10px 10px;
+  background: #fff;
+  box-shadow: 0 8px 24px #1230470a;
+}
+.order-editor-page > .ant-alert {
+  margin-bottom: 18px;
+}
 .order-editor-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 250px;
@@ -355,6 +371,7 @@
 .order-row-actions {
   display: flex;
   align-items: center;
+  gap: 6px;
   min-height: 24px;
   white-space: nowrap;
 }

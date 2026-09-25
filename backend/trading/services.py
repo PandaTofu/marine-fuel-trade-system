@@ -217,6 +217,10 @@ def save_order(actor, payload, pk=None):
             raise BusinessError('order_closed', 409)
         if row.state in FINANCIAL_ORDER_STATES and row.entries.exists() and not str(payload.get('reason', '')).strip():
             raise BusinessError('reason_required')
+        if payload.get('desired_state') == 'void':
+            close_order(row, actor, payload.get('version'), str(payload.get('reason', '')), void=True)
+            row.refresh_from_db()
+            return dict(OrderSerializer(row).data)
     if len(str(payload.get('reason', ''))) > 1000:
         raise BusinessError('invalid')
     serializer = OrderSerializer(row, data=payload, partial=row is not None)
@@ -224,9 +228,13 @@ def save_order(actor, payload, pk=None):
     values = dict(serializer.validated_data)
     lines = values.pop('lines', None)
     save_as_draft = values.pop('save_as_draft', False)
+    desired_state = values.pop('desired_state', None)
     settlements = {key: values.pop(key) for key in COMPONENTS if key in values}
+    save_as_draft = desired_state == 'draft' if desired_state else save_as_draft
     if row and row.state in FINANCIAL_ORDER_STATES and save_as_draft:
         raise BusinessError('active_order_cannot_be_draft')
+    if desired_state == 'void':
+        raise BusinessError('invalid')
     if save_as_draft:
         values.update(state='draft')
     else:
@@ -381,8 +389,6 @@ def close_order(order, actor, version, reason, void=False, date=None):
         raise BusinessError('order_closed', 409)
     if not reason.strip():
         raise BusinessError('reason_required')
-    if order.state == 'draft' and void:
-        raise BusinessError('order_closed', 409)
     if not void and order.entries.exists():
         raise BusinessError('posted_order_protected')
     if void:

@@ -33,6 +33,7 @@ class LineSerializer(serializers.ModelSerializer):
 
 class OrderSerializer(serializers.ModelSerializer):
     save_as_draft = serializers.BooleanField(required=False, default=False, write_only=True)
+    desired_state = serializers.ChoiceField(choices=['draft', 'confirmed', 'supplied', 'completed', 'void'], required=False, write_only=True)
     customer_deposit = serializers.DecimalField(max_digits=18, decimal_places=2, min_value=0, required=False, write_only=True)
     customer_received = serializers.DecimalField(max_digits=18, decimal_places=2, min_value=0, required=False, write_only=True)
     supplier_deposit = serializers.DecimalField(max_digits=18, decimal_places=2, min_value=0, required=False, write_only=True)
@@ -43,7 +44,7 @@ class OrderSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Order
-        fields = ['id', 'number', 'public_id', 'order_date', 'customer', 'customer_reference', 'supplier', 'supplier_reference', 'vessel', 'port', 'port_reference', 'imo', 'estimated_start_date', 'estimated_end_date', 'actual_date', 'customer_term_description', 'customer_term', 'supplier_term_description', 'supplier_term', 'commission_rate', 'commission_recipient', 'salesperson', 'salesperson_reference', 'customer_fee', 'supplier_fee', 'berth_fee', 'exceptional_fee', 'customer_deposit', 'customer_received', 'supplier_deposit', 'supplier_paid', 'save_as_draft', 'note', 'currency', 'state', 'version', 'lines', 'numbers', 'updated_at']
+        fields = ['id', 'number', 'public_id', 'order_date', 'customer', 'customer_reference', 'supplier', 'supplier_reference', 'vessel', 'port', 'port_reference', 'imo', 'estimated_start_date', 'estimated_end_date', 'actual_date', 'customer_term_description', 'customer_term', 'supplier_term_description', 'supplier_term', 'commission_rate', 'commission_recipient', 'salesperson', 'salesperson_reference', 'customer_fee', 'supplier_fee', 'berth_fee', 'exceptional_fee', 'customer_deposit', 'customer_received', 'supplier_deposit', 'supplier_paid', 'save_as_draft', 'desired_state', 'note', 'currency', 'state', 'version', 'lines', 'numbers', 'updated_at']
         read_only_fields = ['state', 'version', 'public_id', 'updated_at']
         extra_kwargs = {key: {'min_value': Decimal(0)} for key in ['commission_rate', 'customer_fee', 'supplier_fee', 'berth_fee', 'exceptional_fee']}
 
@@ -150,6 +151,18 @@ class ReasonInput(serializers.Serializer):
     def validate_date(self, value):
         if value > timezone.localdate():
             raise serializers.ValidationError('future_date')
+        return value
+
+
+class DocumentContentInput(serializers.Serializer):
+    content = serializers.JSONField()
+
+    def validate_content(self, value):
+        if not isinstance(value, dict) or len(str(value)) > 200000:
+            raise serializers.ValidationError('invalid')
+        products = value.get('products', [])
+        if not isinstance(products, list) or len(products) > 100:
+            raise serializers.ValidationError('invalid')
         return value
 
 

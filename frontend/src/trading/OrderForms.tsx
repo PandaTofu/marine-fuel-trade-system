@@ -17,7 +17,6 @@ import {
 import {
   DeleteOutlined,
   EyeOutlined,
-  FilePdfOutlined,
   PlusOutlined,
 } from "@ant-design/icons";
 import dayjs from "dayjs";
@@ -30,7 +29,6 @@ import {
   AccountField,
   cash,
   CommandErrors,
-  downloadOrderDocument,
   MoneyInput,
   ReferenceInput,
   Status,
@@ -50,12 +48,15 @@ export function OrderEditor({
   order,
   onClose,
   onSaved,
+  embedded = false,
 }: {
   order?: Order;
   onClose: () => void;
   onSaved: (saved: Order) => void;
+  embedded?: boolean;
 }) {
   const { t } = useTranslation();
+  const { user } = useAuth();
   const [form] = Form.useForm();
   useLocaleValidation(form);
   const cmd = useCommand();
@@ -236,37 +237,23 @@ export function OrderEditor({
           },
         ],
       };
-  return (
-    <Modal
-      open
-      width={1280}
-      title={
-        <div className="order-modal-title">
-          <Space>
-            {t(order ? "biz.editOrder" : "biz.createOrder")}
-            <Language />
-          </Space>
-          <Tooltip title={order ? undefined : t("biz.saveBeforeExport")}>
-            <Button
-              icon={<FilePdfOutlined />}
-              disabled={!order}
-              onClick={() => {
-                if (order)
-                  void downloadOrderDocument(order.id, "contract").catch(
-                    () => undefined,
-                  );
-              }}
-            >
-              {t("biz.exportContract")}
-            </Button>
-          </Tooltip>
-        </div>
-      }
-      onCancel={() => {
-        if (!cmd.busy) onClose();
-      }}
-      footer={null}
-    >
+  const requestClose = () => {
+    if (cmd.busy) return;
+    if (!form.isFieldsTouched()) {
+      onClose();
+      return;
+    }
+    Modal.confirm({
+      title: t("biz.unsavedOrderTitle"),
+      content: t("biz.unsavedOrderHint"),
+      okText: t("biz.discardChanges"),
+      cancelText: t("biz.continueEditing"),
+      okButtonProps: { danger: true },
+      onOk: onClose,
+    });
+  };
+  const editorContent = (
+    <>
       <Alert
         type="info"
         message={t("biz.freeInput")}
@@ -303,6 +290,7 @@ export function OrderEditor({
             actual_date: values.actual_date || null,
             version: order?.version,
             save_as_draft: order_state === "draft",
+            desired_state: order_state,
             lines: values.lines.map((line: Record<string, unknown>) => ({
               oil: line.oil,
               oil_reference: line.oil_reference || null,
@@ -353,10 +341,15 @@ export function OrderEditor({
                     rules={required}
                   >
                     <Select
-                      disabled={!!order && order.state !== "draft"}
+                      disabled={order?.state === "void"}
                       options={(
                         order
-                          ? ["draft", "confirmed", "supplied", "completed"]
+                          ? Array.from(
+                              new Set([
+                                order.state,
+                                ...(user?.role === "admin" ? ["void"] : []),
+                              ]),
+                            )
                           : ["draft", "confirmed"]
                       ).map((value) => ({
                         value,
@@ -660,6 +653,7 @@ export function OrderEditor({
                 name="reason"
                 label={t("biz.reason")}
                 extra={t("biz.orderEditHint")}
+                rules={values.order_state === "void" ? required : undefined}
               >
                 <Input.TextArea maxLength={1000} />
               </Form.Item>
@@ -729,6 +723,29 @@ export function OrderEditor({
           <span>{t("biz.saveThenPay")}</span>
         </Space>
       </Form>
+    </>
+  );
+  if (embedded) {
+    return <div className="order-editor-page">{editorContent}</div>;
+  }
+  return (
+    <Modal
+      open
+      width={1280}
+      maskClosable={false}
+      keyboard={false}
+      title={
+        <div className="order-modal-title">
+          <Space>
+            {t(order ? "biz.editOrder" : "biz.createOrder")}
+            <Language />
+          </Space>
+        </div>
+      }
+      onCancel={requestClose}
+      footer={null}
+    >
+      {editorContent}
     </Modal>
   );
 }

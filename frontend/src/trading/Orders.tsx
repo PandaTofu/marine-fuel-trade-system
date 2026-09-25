@@ -2,39 +2,34 @@ import { useState } from "react";
 import {
   Button,
   Card,
-  Dropdown,
   Form,
   Input,
+  Modal,
   Select,
   Space,
   Table,
+  Tabs,
   Tooltip,
 } from "antd";
 import {
-  DeleteOutlined,
   EditOutlined,
   FileDoneOutlined,
   FileExcelOutlined,
   FilePdfOutlined,
-  MoreOutlined,
-  StopOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../auth";
-import { api } from "../api";
 import { ErrorBox } from "../components";
 import {
   cash,
-  downloadOrderDocument,
   Metrics,
   query,
-  ReasonDialog,
   Status,
-  useCommand,
   useResource,
 } from "./shared";
 import { OrderDetail, OrderEditor, SettlementEditor } from "./OrderForms";
+import { DocumentEditor } from "./DocumentEditor";
 import type { Order, OrderList } from "./types";
 
 export default function Orders({
@@ -47,32 +42,29 @@ export default function Orders({
   const [filters, setFilters] = useState<Record<string, unknown>>(
       settlements ? { state: "financial" } : {},
     ),
-    [page, setPage] = useState(1),
-    [selected, setSelected] = useState<Order[]>([]);
+    [page, setPage] = useState(1);
   const [filterForm] = Form.useForm();
+  const [activeTab, setActiveTab] = useState("list");
+  const [newOrderOpen, setNewOrderOpen] = useState(false);
   const r = useResource<OrderList>(
     "trading/orders/?" + query({ ...filters, page }),
   );
-  const cmd = useCommand();
-  const [error, setError] = useState("");
-  const [editor, setEditor] = useState<Order | "new" | null>(null),
+  const [editor, setEditor] = useState<Order | null>(null),
     [payment, setPayment] = useState<{ order: Order; refund: boolean } | null>(
       null,
     ),
-    [detail, setDetail] = useState<Order | null>(null);
-  const [closing, setClosing] = useState<{
-    action: "delete" | "void" | "bulk" | "clear";
-    rows: { id: number; version: number }[];
-  } | null>(null);
+    [detail, setDetail] = useState<Order | null>(null),
+    [document, setDocument] = useState<{
+      orderId: number;
+      kind: "contract" | "invoice";
+    } | null>(null);
   const refresh = () => {
     r.refresh();
-    setSelected([]);
   };
   const columns: ColumnsType<Order> = [
     {
       title: t("biz.number"),
       dataIndex: "number",
-      fixed: "left",
       width: 195,
       render: (v: string, o: Order) => (
         <Button type="link" onClick={() => setDetail(o)}>
@@ -127,12 +119,11 @@ export default function Orders({
     })),
     {
       title: t("biz.action"),
-      width: 230,
-      fixed: "right",
+      width: 520,
       render: (_: unknown, o: Order) => (
         <div className="order-row-actions">
-          {["confirmed", "supplied", "completed"].includes(o.state) &&
-            (settlements ? (
+          {settlements ? (
+            ["confirmed", "supplied", "completed"].includes(o.state) && (
               <Space size={6}>
                 <Button
                   size="small"
@@ -150,8 +141,10 @@ export default function Orders({
                   {t("biz.refundAction")}
                 </Button>
               </Space>
-            ) : (
-              <Space size={6}>
+            )
+          ) : (
+            <Space size={6}>
+              {o.state !== "void" && (
                 <Tooltip title={t("biz.edit")}>
                   <Button
                     size="small"
@@ -161,119 +154,24 @@ export default function Orders({
                     onClick={() => setEditor(o)}
                   />
                 </Tooltip>
-                <Tooltip
-                  title={
-                    user?.role === "admin"
-                      ? t("biz.delete")
-                      : t("biz.adminDeleteOnly")
-                  }
-                >
-                  <span>
-                    <Button
-                      size="small"
-                      type="text"
-                      danger
-                      aria-label={t("biz.delete")}
-                      icon={<DeleteOutlined />}
-                      disabled={user?.role !== "admin"}
-                      onClick={() =>
-                        setClosing({ action: "delete", rows: [o] })
-                      }
-                    />
-                  </span>
-                </Tooltip>
-                {user?.role === "admin" && (
-                  <Tooltip title={t("biz.voidAction")}>
-                    <Button
-                      size="small"
-                      type="text"
-                      danger
-                      aria-label={t("biz.voidAction")}
-                      icon={<StopOutlined />}
-                      onClick={() => setClosing({ action: "void", rows: [o] })}
-                    />
-                  </Tooltip>
-                )}
-                <Dropdown
-                  trigger={["click"]}
-                  menu={{
-                    onClick: async ({ key }) => {
-                      if (
-                        key === "export-contract" ||
-                        key === "issue-invoice"
-                      ) {
-                        setError("");
-                        try {
-                          await downloadOrderDocument(
-                            o.id,
-                            key === "export-contract" ? "contract" : "invoice",
-                          );
-                        } catch (e) {
-                          setError((e as Error).message);
-                        }
-                      }
-                    },
-                    items: [
-                      {
-                        key: "export-order",
-                        icon: <FileExcelOutlined />,
-                        label: t("biz.exportOrderExcel"),
-                        disabled: true,
-                      },
-                      {
-                        key: "export-contract",
-                        icon: <FilePdfOutlined />,
-                        label: t("biz.exportContract"),
-                      },
-                      {
-                        key: "issue-invoice",
-                        icon: <FileDoneOutlined />,
-                        label: t("biz.issueInvoice"),
-                      },
-                    ],
-                  }}
-                >
-                  <Tooltip title={t("biz.moreActions")}>
-                    <Button
-                      size="small"
-                      type="text"
-                      aria-label={t("biz.moreActions")}
-                      icon={<MoreOutlined />}
-                    />
-                  </Tooltip>
-                </Dropdown>
-              </Space>
-            ))}
-          {o.state === "draft" && !settlements && (
-            <Space size={6}>
-              <Tooltip title={t("biz.edit")}>
-                <Button
-                  size="small"
-                  type="text"
-                  aria-label={t("biz.edit")}
-                  icon={<EditOutlined />}
-                  onClick={() => setEditor(o)}
-                />
-              </Tooltip>
-              <Tooltip
-                title={
-                  user?.role === "admin"
-                    ? t("biz.delete")
-                    : t("biz.adminDeleteOnly")
-                }
+              )}
+              <Button size="small" icon={<FileExcelOutlined />} disabled>
+                {t("biz.exportOrderExcel")}
+              </Button>
+              <Button
+                size="small"
+                icon={<FilePdfOutlined />}
+                onClick={() => setDocument({ orderId: o.id, kind: "contract" })}
               >
-                <span>
-                  <Button
-                    size="small"
-                    type="text"
-                    danger
-                    aria-label={t("biz.delete")}
-                    icon={<DeleteOutlined />}
-                    disabled={user?.role !== "admin"}
-                    onClick={() => setClosing({ action: "delete", rows: [o] })}
-                  />
-                </span>
-              </Tooltip>
+                {t("biz.exportContract")}
+              </Button>
+              <Button
+                size="small"
+                icon={<FileDoneOutlined />}
+                onClick={() => setDocument({ orderId: o.id, kind: "invoice" })}
+              >
+                {t("biz.issueInvoice")}
+              </Button>
             </Space>
           )}
           {!settlements && <Status value={o.state} />}
@@ -281,8 +179,45 @@ export default function Orders({
       ),
     },
   ];
+  const openNewOrder = () => {
+    setNewOrderOpen(true);
+    setActiveTab("new-order");
+  };
+  const closeNewOrder = () => {
+    setNewOrderOpen(false);
+    setActiveTab("list");
+  };
+  const requestCloseNewOrder = () => {
+    Modal.confirm({
+      title: t("biz.unsavedOrderTitle"),
+      content: t("biz.unsavedOrderHint"),
+      okText: t("biz.discardChanges"),
+      cancelText: t("biz.continueEditing"),
+      okButtonProps: { danger: true },
+      onOk: closeNewOrder,
+    });
+  };
   return (
     <>
+      {!settlements && (
+        <Tabs
+          className="order-workspace-tabs"
+          type="editable-card"
+          hideAdd
+          activeKey={activeTab}
+          onChange={setActiveTab}
+          onEdit={(key, action) => {
+            if (action === "remove" && key === "new-order") requestCloseNewOrder();
+          }}
+          items={[
+            { key: "list", label: t("biz.orders"), closable: false },
+            ...(newOrderOpen
+              ? [{ key: "new-order", label: t("biz.createOrder"), closable: true }]
+              : []),
+          ]}
+        />
+      )}
+      <div hidden={!settlements && activeTab !== "list"}>
       <div className="page-heading">
         <div className="eyebrow">MARINE TRADE · USD</div>
         <h1>{t(settlements ? "biz.settlements" : "biz.orders")}</h1>
@@ -320,7 +255,6 @@ export default function Orders({
           onFinish={(values) => {
             setFilters(values);
             setPage(1);
-            setSelected([]);
           }}
         >
           {["q", "customer", "supplier", "port", "oil", "salesperson"].map(
@@ -392,7 +326,6 @@ export default function Orders({
                 );
                 setFilters(settlements ? { state: "financial" } : {});
                 setPage(1);
-                setSelected([]);
               }}
             >
               {t("biz.reset")}
@@ -402,61 +335,18 @@ export default function Orders({
       </Card>
       <div className="business-toolbar">
         {!settlements && (
-          <Button type="primary" onClick={() => setEditor("new")}>
+          <Button type="primary" onClick={openNewOrder}>
             {t("biz.createOrder")}
           </Button>
         )}
-        {!settlements && user?.role === "admin" && (
-          <Space>
-            <Button
-              danger
-              disabled={!selected.length}
-              onClick={() => setClosing({ action: "bulk", rows: selected })}
-            >
-              {t("biz.deleteSelected")} ({selected.length})
-            </Button>
-            <Button
-              danger
-              onClick={async () => {
-                setError("");
-                try {
-                  const rows = await api<{ id: number; version: number }[]>(
-                    "trading/orders/clear-snapshot/",
-                  );
-                  if (rows.length) setClosing({ action: "clear", rows });
-                } catch (e) {
-                  setError((e as Error).message);
-                }
-              }}
-            >
-              {t("biz.clearAll")}
-            </Button>
-          </Space>
-        )}
       </div>
-      <ErrorBox error={r.error || error} retry={r.refresh} />
+      <ErrorBox error={r.error} retry={r.refresh} />
       <Table<Order>
         rowKey="id"
         loading={r.loading}
         dataSource={r.data?.results}
         columns={columns}
-        scroll={{ x: 2300 }}
-        rowSelection={
-          !settlements && user?.role === "admin"
-            ? {
-                selectedRowKeys: selected.map((o) => o.id),
-                onChange: (_, rows) => setSelected(rows),
-                getCheckboxProps: (o) => ({
-                  disabled: ![
-                    "draft",
-                    "confirmed",
-                    "supplied",
-                    "completed",
-                  ].includes(o.state),
-                }),
-              }
-            : undefined
-        }
+        scroll={{ x: 2600 }}
         pagination={{
           current: page,
           pageSize: 20,
@@ -464,13 +354,26 @@ export default function Orders({
           showSizeChanger: false,
           onChange: (value) => {
             setPage(value);
-            setSelected([]);
           },
         }}
       />
+      </div>
+      {!settlements && newOrderOpen && (
+        <div hidden={activeTab !== "new-order"}>
+          <OrderEditor
+            embedded
+            onClose={closeNewOrder}
+            onSaved={(saved) => {
+              refresh();
+              closeNewOrder();
+              setDetail(saved);
+            }}
+          />
+        </div>
+      )}
       {editor && (
         <OrderEditor
-          order={editor === "new" ? undefined : editor}
+          order={editor}
           onClose={() => setEditor(null)}
           onSaved={(saved) => {
             refresh();
@@ -495,42 +398,12 @@ export default function Orders({
           }}
         />
       )}
-      {closing && (
-        <ReasonDialog
-          title={t(
-            `biz.${closing.action === "void" ? "voidAction" : closing.action === "clear" ? "clearAll" : "delete"}`,
-          )}
-          hint={t(
-            closing.action === "void"
-              ? "biz.voidHint"
-              : closing.action === "clear"
-                ? "biz.clearHint"
-                : "biz.deleteHint",
-          )}
-          clear={closing.action === "clear"}
-          date={closing.action === "void"}
-          onClose={() => setClosing(null)}
-          onSubmit={async (values) => {
-            const bulk = ["bulk", "clear"].includes(closing.action);
-            await cmd.send(
-              bulk
-                ? "trading/orders/bulk-delete/"
-                : `trading/orders/${closing.rows[0].id}/${closing.action}/`,
-              bulk
-                ? {
-                    ...values,
-                    orders: closing.rows.map(({ id, version }) => ({
-                      id,
-                      version,
-                    })),
-                    clear_all: closing.action === "clear",
-                  }
-                : { ...values, version: closing.rows[0].version },
-            );
-            refresh();
-          }}
+      {document && (
+        <DocumentEditor
+          {...document}
+          onClose={() => setDocument(null)}
         />
-      )}{" "}
+      )}
     </>
   );
 }
