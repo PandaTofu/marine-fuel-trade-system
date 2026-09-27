@@ -73,3 +73,7 @@ npm.cmd --prefix frontend run build
 复制 `.env.example` 配置实际环境，`DJANGO_DEBUG=false`，真实域名、可信 HTTPS Origin、安全 Cookie；使用 Nginx 同域代理和 WSGI 服务，不使用 Vite/Django 开发服务器。数据库、附件鉴权、备份恢复、日志轮转、自动启动和迁移需在阶段 7 完整验收。当前不宣称已实现生产运维。
 
 不要公开 `.local/`、`.env.local`、源代码或数据库端口。所有密码均为随机本地初始化或管理员输入，应用无内置通用登录密码。
+
+### 合同与发票邮件
+
+邮件发送使用 SMTP，并将当前保存的最新版合同或发票 PDF 作为附件。部署环境需在 `.env.local` 配置 `EMAIL_HOST`、`EMAIL_PORT`、`EMAIL_HOST_USER`、`EMAIL_HOST_PASSWORD`、`EMAIL_USE_TLS`、`EMAIL_USE_SSL` 和 `DEFAULT_FROM_EMAIL`；凭据不得提交到 Git。常见的 587 端口使用 TLS，465 端口使用 SSL，两者不要同时启用。系统保存每次发送的收件人、抄送、主题、正文、操作人、时间及成功或失败状态。

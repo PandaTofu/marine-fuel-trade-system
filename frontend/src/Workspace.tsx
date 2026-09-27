@@ -62,7 +62,6 @@ export default function Workspace() {
         <Menu
           theme="dark"
           selectedKeys={[location.pathname]}
-          defaultOpenKeys={["reference-root"]}
           items={menu}
         />
         <div className="sidebar-foot">

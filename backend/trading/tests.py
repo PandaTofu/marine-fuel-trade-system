@@ -14,12 +14,12 @@ from unittest.mock import patch
 from zipfile import ZipFile
 from xml.etree import ElementTree
 from django.db import close_old_connections
-from django.test import TestCase, SimpleTestCase, TransactionTestCase, skipUnlessDBFeature
+from django.test import TestCase, SimpleTestCase, TransactionTestCase, override_settings, skipUnlessDBFeature
 from django.utils import timezone
 from rest_framework.test import APIClient
 from core.models import Reference, User
 from .calculations import state, totals, order_numbers
-from .models import Account, Entry, Mutation, Order, OrderDocument, OrderRevision, WriteLock
+from .models import Account, DocumentEmail, Entry, Mutation, Order, OrderDocument, OrderRevision, WriteLock
 from .services import account_balance
 from .documents import SALES_TERMS
 
@@ -121,6 +121,43 @@ class TradingTests(TestCase):
         response = self.write(f"orders/{order['id']}/", changed, method='patch')
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(OrderDocument.objects.get(order_id=order['id'], kind='contract').content['buyer'], 'Edited PDF buyer only')
+
+    @override_settings(EMAIL_HOST='smtp.example.com', DEFAULT_FROM_EMAIL='bunker@example.com')
+    @patch('trading.views.EmailMessage')
+    def test_document_email_uses_customer_or_typed_recipient_and_pdf_attachment(self, email_message):
+        customer = Reference.objects.create(kind='customer', name='Mail Customer', email='customer@example.com')
+        customer.assign_code()
+        payload = order_payload()
+        payload['customer_reference'] = customer.pk
+        order = self.create_order(payload)
+        path = f"/api/trading/orders/{order['id']}/documents/invoice/email/"
+        defaults = self.client.get(path)
+        self.assertEqual(defaults.status_code, 200, defaults.data)
+        self.assertEqual(defaults.json()['recipients'], ['customer@example.com'])
+        self.assertIn(f"{order['number']}-INV", defaults.json()['subject'])
+
+        email_message.return_value.send.return_value = 1
+        response = self.client.post(path, {
+            'request_id': str(uuid.uuid4()),
+            'recipients': ['typed@example.com'],
+            'cc': ['copy@example.com'],
+            'subject': defaults.json()['subject'],
+            'body': defaults.json()['body'],
+        }, format='json')
+        self.assertEqual(response.status_code, 200, response.data)
+        delivery = DocumentEmail.objects.get()
+        self.assertEqual(delivery.status, 'sent')
+        self.assertEqual(delivery.recipients, ['typed@example.com'])
+        email_message.assert_called_once()
+        email_message.return_value.attach.assert_called_once()
+        attachment = email_message.return_value.attach.call_args.args
+        self.assertTrue(attachment[0].endswith('-INV.pdf'))
+        self.assertTrue(attachment[1].startswith(b'%PDF-'))
+        self.assertEqual(attachment[2], 'application/pdf')
+
+        metadata = self.client.get(f"/api/trading/orders/{order['id']}/documents/invoice/").json()
+        self.assertEqual(metadata['last_sent_to'], ['typed@example.com'])
+        self.assertIsNotNone(metadata['last_sent_at'])
 
     def test_order_numbers_restart_each_day_and_excel_has_two_sheets(self):
         september = order_payload(False)

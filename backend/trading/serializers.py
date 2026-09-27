@@ -161,6 +161,28 @@ class DocumentContentInput(serializers.Serializer):
         return value
 
 
+class DocumentEmailInput(serializers.Serializer):
+    request_id = serializers.UUIDField()
+    recipients = serializers.ListField(
+        child=serializers.EmailField(), min_length=1, max_length=20,
+    )
+    cc = serializers.ListField(
+        child=serializers.EmailField(), max_length=20, required=False, default=list,
+    )
+    subject = serializers.CharField(max_length=300, allow_blank=False, trim_whitespace=True)
+    body = serializers.CharField(max_length=20000, allow_blank=False, trim_whitespace=False)
+
+    def validate_subject(self, value):
+        if '\r' in value or '\n' in value:
+            raise serializers.ValidationError('invalid')
+        return value
+
+    def validate(self, attrs):
+        attrs['recipients'] = list(dict.fromkeys(attrs['recipients']))
+        attrs['cc'] = [address for address in dict.fromkeys(attrs['cc']) if address not in attrs['recipients']]
+        return attrs
+
+
 class EntrySerializer(serializers.ModelSerializer):
     account_name = serializers.CharField(source='account.name', read_only=True)
     account_currency = serializers.CharField(source='account.currency', read_only=True)

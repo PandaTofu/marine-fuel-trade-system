@@ -30,6 +30,7 @@ import {
 } from "./shared";
 import { OrderDetail, OrderEditor, SettlementEditor } from "./OrderForms";
 import { DocumentEditor } from "./DocumentEditor";
+import { EmailSender } from "./EmailSender";
 import type { Order, OrderList } from "./types";
 
 export default function Orders({
@@ -58,6 +59,10 @@ export default function Orders({
     ),
     [detail, setDetail] = useState<Order | null>(null),
     [document, setDocument] = useState<{
+      orderId: number;
+      kind: "contract" | "invoice";
+    } | null>(null),
+    [emailDocument, setEmailDocument] = useState<{
       orderId: number;
       kind: "contract" | "invoice";
     } | null>(null);
@@ -470,6 +475,9 @@ export default function Orders({
             onDocumentEdit={(kind) =>
               setDocument({ orderId: detail.id, kind })
             }
+            onDocumentSend={(kind) =>
+              setEmailDocument({ orderId: detail.id, kind })
+            }
           />
         </div>
       )}
@@ -486,6 +494,9 @@ export default function Orders({
           onDocumentEdit={(kind) =>
             setDocument({ orderId: detail.id, kind })
           }
+          onDocumentSend={(kind) =>
+            setEmailDocument({ orderId: detail.id, kind })
+          }
         />
       )}
       {document && (
@@ -493,6 +504,13 @@ export default function Orders({
           {...document}
           onClose={() => setDocument(null)}
           onSaved={() => setDocumentRevision((value) => value + 1)}
+        />
+      )}
+      {emailDocument && (
+        <EmailSender
+          {...emailDocument}
+          onClose={() => setEmailDocument(null)}
+          onSent={() => setDocumentRevision((value) => value + 1)}
         />
       )}
     </>

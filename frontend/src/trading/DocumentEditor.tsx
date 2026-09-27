@@ -11,6 +11,8 @@ export type DocumentResponse = {
   content: Record<string, unknown>;
   updated_at: string | null;
   updated_by: string | null;
+  last_sent_at: string | null;
+  last_sent_to: string[];
 };
 
 export function DocumentEditor({

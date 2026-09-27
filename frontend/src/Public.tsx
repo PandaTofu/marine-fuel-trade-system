@@ -110,7 +110,7 @@ export default function Public() {
           </div>
           <div className="contact-card">
             <small>{t("sampleContact")}</small>
-            <p>business@example.com</p>
+            <p>bunker@bond-shipping.com</p>
             <span>{t("sample")}</span>
           </div>
         </section>

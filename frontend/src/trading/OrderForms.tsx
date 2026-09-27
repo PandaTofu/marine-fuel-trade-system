@@ -1019,6 +1019,7 @@ export function OrderDetail({
   onEdit,
   onChanged,
   onDocumentEdit,
+  onDocumentSend,
   embedded = false,
 }: {
   order: Order;
@@ -1026,6 +1027,7 @@ export function OrderDetail({
   onEdit: (order: Order) => void;
   onChanged: (order: Order) => void;
   onDocumentEdit: (kind: DocumentKind) => void;
+  onDocumentSend: (kind: DocumentKind) => void;
   embedded?: boolean;
 }) {
   const { t } = useTranslation();
@@ -1043,6 +1045,7 @@ export function OrderDetail({
     `trading/orders/${order.id}/documents/contract/`,
   );
   const [snapshot, setSnapshot] = useState<Order>(order),
+    [activeDetailTab, setActiveDetailTab] = useState("detail"),
     [payment, setPayment] = useState(false),
     [documentError, setDocumentError] = useState(""),
     [downloading, setDownloading] = useState<DocumentKind | null>(null);
@@ -1093,7 +1096,14 @@ export function OrderDetail({
               {t("biz.generatedBy")}: {resource.data?.updated_by || "—"}
             </span>
           </div>
-          <span className="muted">{t("biz.notSent")}</span>
+          <span className="muted">
+            {resource.data?.last_sent_at
+              ? t("biz.lastSent", {
+                  time: new Date(resource.data.last_sent_at).toLocaleString(),
+                  recipients: resource.data.last_sent_to.join(", "),
+                })
+              : t("biz.notSent")}
+          </span>
         </div>
         <Space className="order-document-actions" wrap>
           <Button
@@ -1121,11 +1131,13 @@ export function OrderDetail({
           >
             {t("biz.downloadPdf")}
           </Button>
-          <Tooltip title={t("biz.sendComingSoon")}>
-            <Button type="primary" icon={<SendOutlined />} disabled>
-              {t(invoice ? "biz.sendInvoice" : "biz.sendContract")}
-            </Button>
-          </Tooltip>
+          <Button
+            type="primary"
+            icon={<SendOutlined />}
+            onClick={() => onDocumentSend(kind)}
+          >
+            {t(invoice ? "biz.sendInvoice" : "biz.sendContract")}
+          </Button>
         </Space>
       </article>
     );
@@ -1133,12 +1145,31 @@ export function OrderDetail({
   const content = (
     <>
       <Tabs
+        activeKey={activeDetailTab}
+        onChange={setActiveDetailTab}
         items={[
           {
             key: "detail",
             label: t("biz.detail"),
             children: (
               <>
+                {snapshot.version !== order.version && (
+                  <Alert
+                    type="info"
+                    showIcon
+                    message={t("biz.viewingRevision", {
+                      version: snapshot.version,
+                    })}
+                    action={
+                      <Button
+                        size="small"
+                        onClick={() => setSnapshot(order)}
+                      >
+                        {t("biz.backToLatest")}
+                      </Button>
+                    }
+                  />
+                )}
                 <div className="business-detail">
                   {[
                     "state",
@@ -1372,7 +1403,10 @@ export function OrderDetail({
                             type="text"
                             aria-label={`${t("biz.view")} v${r.version}`}
                             icon={<EyeOutlined />}
-                            onClick={() => setSnapshot(r.snapshot)}
+                            onClick={() => {
+                              setSnapshot(r.snapshot);
+                              setActiveDetailTab("detail");
+                            }}
                           />
                         </Tooltip>
                       ),

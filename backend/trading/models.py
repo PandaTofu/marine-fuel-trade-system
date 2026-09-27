@@ -148,3 +148,22 @@ class OrderDocument(models.Model):
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=['order', 'kind'], name='trading_order_document_kind')]
+
+
+class DocumentEmail(models.Model):
+    STATUSES = [('pending', 'Pending'), ('sent', 'Sent'), ('failed', 'Failed')]
+    document = models.ForeignKey(OrderDocument, related_name='emails', on_delete=models.PROTECT)
+    request_id = models.UUIDField(unique=True)
+    recipients = models.JSONField(default=list)
+    cc = models.JSONField(default=list)
+    subject = models.CharField(max_length=300)
+    body = models.TextField(max_length=20000)
+    attachment_name = models.CharField(max_length=180)
+    status = models.CharField(max_length=12, choices=STATUSES, default='pending')
+    error = models.CharField(max_length=1000, blank=True)
+    sent_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    created_at = models.DateTimeField(auto_now_add=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at', '-id']

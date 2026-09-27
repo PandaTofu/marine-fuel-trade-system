@@ -1,13 +1,15 @@
 from datetime import date, timedelta
 from decimal import Decimal
+from django.conf import settings
+from django.core.mail import EmailMessage
 from django.http import HttpResponse
 from django.db.models import Q
 from django.utils import timezone
-from core.models import Audit
+from core.models import Audit, Company, Reference
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
-from .models import Account, Order, Entry, OrderDocument
-from .serializers import OrderSerializer, EntrySerializer, SettlementSerializer, EntryInput, RefundInput, ReasonInput, DocumentContentInput
+from .models import Account, Order, Entry, OrderDocument, DocumentEmail
+from .serializers import OrderSerializer, EntrySerializer, SettlementSerializer, EntryInput, RefundInput, ReasonInput, DocumentContentInput, DocumentEmailInput
 from .services import command, save_order, save_account, delete_account, account_data, account_balance, locked_order, settle, refund, manual_entry, reverse_entry, close_order, require_admin, BusinessError
 from .calculations import FINANCIAL_ORDER_STATES, EXCLUDED_ORDER_STATES, text, ZERO
 from .exports import workbook
@@ -176,11 +178,14 @@ def order_document_content(request, pk, kind):
         raise BusinessError('not_found', 404)
     saved = OrderDocument.objects.filter(order=row, kind=kind).first()
     if request.method == 'GET':
+        last_email = saved.emails.filter(status='sent').first() if saved else None
         return Response({
             'kind': kind,
             'content': saved.content if saved else document_defaults(row, kind),
             'updated_at': saved.updated_at.isoformat() if saved else None,
             'updated_by': saved.updated_by.username if saved else None,
+            'last_sent_at': last_email.sent_at.isoformat() if last_email else None,
+            'last_sent_to': last_email.recipients if last_email else [],
         })
     content = validated(DocumentContentInput, request.data)['content']
     saved, _ = OrderDocument.objects.update_or_create(
@@ -189,6 +194,127 @@ def order_document_content(request, pk, kind):
     )
     Audit.objects.create(actor=request.user, action=f'{kind}_updated', target=str(row.pk))
     return Response({'kind': kind, 'content': saved.content, 'updated_at': saved.updated_at.isoformat(), 'updated_by': request.user.username})
+
+
+def document_email_defaults(order, document):
+    invoice = document.kind == 'invoice'
+    content = document.content
+    company, _ = Company.objects.get_or_create(pk=1)
+    company_name = company.name_en or company.name
+    customer = order.customer_reference if order.customer_reference_id else None
+    recipients = [customer.email] if customer and customer.email else []
+    number = str(content.get('invoice_number' if invoice else 'reference') or f'{order.number}-{"INV" if invoice else "CON"}')
+    attachment_stem = ''.join(character if character.isalnum() or character in '._-' else '_' for character in number)[:160]
+    if invoice:
+        subject = f'Invoice {number} – {order.vessel} – {company_name}'
+        amount = Decimal('0')
+        for line in content.get('products', []):
+            try:
+                amount += Decimal(str(line.get('amount') or 0).replace(',', ''))
+            except (AttributeError, TypeError, ValueError, ArithmeticError):
+                continue
+        body = (
+            f'Dear Customer,\n\nPlease find attached our invoice {number} for the marine fuel supplied to '
+            f'{order.vessel} at {order.port} on {content.get("delivery_date") or "—"}.\n\nInvoice details:\n'
+            f'- Order number: {order.number}\n- Invoice number: {number}\n- Vessel: {order.vessel}\n'
+            f'- Port: {order.port}\n- Invoice amount: {order.currency} {amount:.2f}\n'
+            f'- Payment due date: {content.get("due_date") or "—"}\n\nPlease use {number} as the payment reference.\n\n'
+            'Should you have any questions regarding this invoice, please feel free to contact us.\n\n'
+            f'Best regards,\n{company_name}\nEmail: {company.email}'
+        )
+    else:
+        subject = f'Sales Contract {number} – {order.vessel} – {company_name}'
+        products = ', '.join(str(line.get('name') or '') for line in content.get('products', []) if line.get('name')) or '—'
+        body = (
+            f'Dear Customer,\n\nPlease find attached sales contract {number} for the marine fuel order detailed below.\n\n'
+            f'Contract details:\n- Order number: {order.number}\n- Contract number: {number}\n'
+            f'- Vessel: {order.vessel}\n- Port: {order.port}\n- Estimated delivery period: {content.get("eta") or "—"}\n'
+            f'- Product: {products}\n\nPlease review the attached contract and contact us if any amendment is required.\n\n'
+            f'Best regards,\n{company_name}\nEmail: {company.email}'
+        )
+    return {
+        'recipients': recipients,
+        'cc': [],
+        'subject': subject,
+        'body': body,
+        'attachment_name': f'{attachment_stem}.pdf',
+        'customers': list(Reference.objects.filter(kind='customer', is_active=True).exclude(email='').values('id', 'name', 'email')),
+        'from_email': settings.DEFAULT_FROM_EMAIL,
+    }
+
+
+@api_view(['GET', 'POST'])
+def order_document_email(request, pk, kind):
+    if kind not in ('invoice', 'contract'):
+        raise BusinessError('not_found', 404)
+    try:
+        order = Order.objects.exclude(state='deleted').prefetch_related('lines', 'entries').get(pk=pk)
+    except Order.DoesNotExist:
+        raise BusinessError('not_found', 404)
+    document = OrderDocument.objects.filter(order=order, kind=kind).first()
+    if not document:
+        document = OrderDocument(
+            order=order,
+            kind=kind,
+            content=document_defaults(order, kind),
+            updated_by=request.user,
+        )
+    defaults = document_email_defaults(order, document)
+    if request.method == 'GET':
+        return Response(defaults)
+    if not settings.EMAIL_HOST or not settings.DEFAULT_FROM_EMAIL:
+        raise BusinessError('email_not_configured', 503)
+    values = validated(DocumentEmailInput, request.data)
+    if document.pk is None:
+        document, created = OrderDocument.objects.get_or_create(
+            order=order,
+            kind=kind,
+            defaults={'content': document.content, 'updated_by': request.user},
+        )
+        if not created:
+            defaults = document_email_defaults(order, document)
+    existing = DocumentEmail.objects.filter(request_id=values['request_id']).first()
+    if existing:
+        if existing.document_id != document.id:
+            raise BusinessError('idempotency_conflict', 409)
+        if existing.status == 'sent':
+            return Response({'status': 'sent', 'sent_at': existing.sent_at.isoformat()})
+        raise BusinessError('email_send_in_progress' if existing.status == 'pending' else 'email_send_failed', 409)
+    delivery = DocumentEmail.objects.create(
+        document=document,
+        request_id=values['request_id'],
+        recipients=values['recipients'],
+        cc=values['cc'],
+        subject=values['subject'],
+        body=values['body'],
+        attachment_name=defaults['attachment_name'],
+        sent_by=request.user,
+    )
+    pdf = invoice_pdf(order, document.content) if kind == 'invoice' else contract_pdf(order, document.content)
+    company, _ = Company.objects.get_or_create(pk=1)
+    message = EmailMessage(
+        subject=values['subject'],
+        body=values['body'],
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        to=values['recipients'],
+        cc=values['cc'],
+        reply_to=[company.email] if company.email else None,
+    )
+    message.attach(defaults['attachment_name'], pdf, 'application/pdf')
+    try:
+        if message.send(fail_silently=False) != 1:
+            raise RuntimeError('SMTP backend did not accept the message.')
+    except Exception as error:
+        delivery.status = 'failed'
+        delivery.error = f'{type(error).__name__}: {error}'[:1000]
+        delivery.save(update_fields=['status', 'error'])
+        Audit.objects.create(actor=request.user, action=f'{kind}_email_failed', target=str(order.pk))
+        raise BusinessError('email_send_failed', 502)
+    delivery.status = 'sent'
+    delivery.sent_at = timezone.now()
+    delivery.save(update_fields=['status', 'sent_at'])
+    Audit.objects.create(actor=request.user, action=f'{kind}_email_sent', target=str(order.pk))
+    return Response({'status': 'sent', 'sent_at': delivery.sent_at.isoformat()})
 
 
 @api_view(['POST'])

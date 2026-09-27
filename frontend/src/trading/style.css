@@ -161,6 +161,24 @@
 .order-document-actions {
   flex: 0 0 auto;
 }
+.email-readonly-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 18px;
+  padding: 11px 14px;
+  border: 1px solid #e4ebef;
+  border-radius: 7px;
+  background: #f7fafb;
+}
+.email-readonly-row span {
+  color: #718391;
+}
+.email-readonly-row strong {
+  overflow-wrap: anywhere;
+  text-align: right;
+}
 .order-editor-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 250px;
