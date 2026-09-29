@@ -6,7 +6,7 @@ import { api } from "../api";
 import { ErrorBox, Language } from "../components";
 import { downloadOrderDocument } from "./shared";
 
-export type DocumentKind = "contract" | "invoice";
+export type DocumentKind = "purchase_contract" | "sales_contract" | "invoice";
 export type DocumentResponse = {
   content: Record<string, unknown>;
   updated_at: string | null;
@@ -67,7 +67,7 @@ export function DocumentEditor({
     </Form.Item>
   );
   const contractFields = [
-    "reference", "date", "vessel", "imo", "port", "eta", "buyer", "seller", "supplier",
+    "reference", "date", "document_title", "vessel", "imo", "port", "eta", "buyer", "seller", "supplier",
   ];
   const invoiceFields = [
     "reference_number", "invoice_number", "customer", "vessel", "imo", "port",
@@ -82,7 +82,7 @@ export function DocumentEditor({
     <Modal
       open
       width={960}
-      title={<Space>{t(kind === "contract" ? "biz.exportContract" : "biz.issueInvoice")}<Language /></Space>}
+      title={<Space>{t(kind === "invoice" ? "biz.issueInvoice" : kind === "purchase_contract" ? "biz.purchaseContract" : "biz.salesContract")}<Language /></Space>}
       onCancel={onClose}
       footer={null}
       destroyOnHidden
@@ -94,9 +94,9 @@ export function DocumentEditor({
             <p className="muted">{t("biz.lastDocumentEdit", { user: metadata.updated_by, time: metadata.updated_at })}</p>
           )}
           <div className="business-form-grid adaptive">
-            {(kind === "contract" ? contractFields : invoiceFields).map((field) => text(field))}
+            {(kind !== "invoice" ? contractFields : invoiceFields).map((field) => text(field))}
           </div>
-          {kind === "contract" && text("intro", 2)}
+          {kind !== "invoice" && text("intro", 2)}
           <Form.List name="products">
             {(fields, { add, remove }) => (
               <>
@@ -114,7 +114,7 @@ export function DocumentEditor({
               </>
             )}
           </Form.List>
-          {kind === "contract" ? (
+          {kind !== "invoice" ? (
             <>
               {text("total")}
               {text("additional_cost", 3)}

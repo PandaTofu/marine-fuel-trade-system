@@ -451,7 +451,7 @@ export async function downloadLedger(params: Record<string, unknown>) {
 }
 export async function downloadOrderDocument(
   orderId: number,
-  kind: "invoice" | "contract",
+  kind: "invoice" | "purchase_contract" | "sales_contract",
 ) {
   const res = await fetch(`/api/trading/orders/${orderId}/${kind}/`, {
     credentials: "same-origin",

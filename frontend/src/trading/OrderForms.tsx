@@ -623,7 +623,7 @@ export function OrderEditor({
                 ))}
               </div>,
             )}
-            {section(
+            {user?.role === "admin" && section(
               t("biz.performanceCommission"),
               <div className="business-form-grid commission-fields">
                 {input("salesperson")}
@@ -659,13 +659,13 @@ export function OrderEditor({
               <span>{t("biz.orderSummary")}</span>
               <small>USD</small>
             </div>
-            <div className="order-summary-profit">
+            {user?.role === "admin" && <div className="order-summary-profit">
               <span>{t("biz.actualProfit")}</span>
               <strong className={actualProfit < 0n ? "negative" : "positive"}>
                 {cash(moneyText(actualProfit))}
               </strong>
               <small>{t("biz.actualProfitFormula")}</small>
-            </div>
+            </div>}
             <div className="order-summary-group">
               <h4>{t("biz.revenueAndCost")}</h4>
               {[
@@ -673,7 +673,7 @@ export function OrderEditor({
                 [t("biz.cost"), totals.cost, "danger"],
                 [t("biz.commissionTotal"), commission, ""],
                 [t("biz.otherFees"), otherFees, ""],
-              ].map(([label, value, tone]) => (
+              ].filter(([label]) => user?.role === "admin" || label !== t("biz.commissionTotal")).map(([label, value, tone]) => (
                 <div className="order-summary-row" key={String(label)}>
                   <span>{String(label)}</span>
                   <strong className={String(tone)}>
@@ -1072,8 +1072,11 @@ export function OrderDetail({
   const invoiceDocument = useResource<DocumentResponse>(
     `trading/orders/${order.id}/documents/invoice/`,
   );
-  const contractDocument = useResource<DocumentResponse>(
-    `trading/orders/${order.id}/documents/contract/`,
+  const purchaseContractDocument = useResource<DocumentResponse>(
+    `trading/orders/${order.id}/documents/purchase_contract/`,
+  );
+  const salesContractDocument = useResource<DocumentResponse>(
+    `trading/orders/${order.id}/documents/sales_contract/`,
   );
   const [snapshot, setSnapshot] = useState<Order>(order),
     [activeDetailTab, setActiveDetailTab] = useState("detail"),
@@ -1105,17 +1108,18 @@ export function OrderDetail({
     resource: typeof invoiceDocument,
   ) => {
     const invoice = kind === "invoice";
+    const purchase = kind === "purchase_contract";
     const updatedAt = resource.data?.updated_at;
     const number = String(
       resource.data?.content[invoice ? "invoice_number" : "reference"] ||
-        `${order.number}-${invoice ? "INV" : "CON"}`,
+        `${order.number}-${invoice ? "INV" : purchase ? "PC" : "SC"}`,
     );
     return (
       <article className="order-document-row">
         <div className="order-document-info">
           <div className="order-document-heading">
-            <Tag color={invoice ? "blue" : "green"}>
-              {t(invoice ? "biz.salesInvoice" : "biz.salesContract")}
+            <Tag color={invoice ? "blue" : purchase ? "orange" : "green"}>
+              {t(invoice ? "biz.salesInvoice" : purchase ? "biz.purchaseContract" : "biz.salesContract")}
             </Tag>
             <strong>{number}</strong>
           </div>
@@ -1217,9 +1221,7 @@ export function OrderDetail({
                     "customer_term",
                     "supplier_term_description",
                     "supplier_term",
-                    "commission_rate",
-                    "commission_recipient",
-                    "salesperson",
+                    ...(user?.role === "admin" ? ["commission_rate", "commission_recipient", "salesperson"] : []),
                     "customer_fee",
                     "supplier_fee",
                     "berth_fee",
@@ -1261,7 +1263,9 @@ export function OrderDetail({
                   ].map((key) => ({ title: t(`biz.${key}`), dataIndex: key }))}
                 />
                 <div className="business-detail">
-                  {Object.entries(snapshot.numbers).map(([key, value]) => (
+                  {Object.entries(snapshot.numbers)
+                    .filter(([key]) => user?.role === "admin" || !["commission", "profit"].includes(key))
+                    .map(([key, value]) => (
                     <div key={key}>
                       <span>{t(`biz.${key}`)}</span>
                       <strong>
@@ -1394,15 +1398,18 @@ export function OrderDetail({
                   error={
                     documentError ||
                     invoiceDocument.error ||
-                    contractDocument.error
+                    purchaseContractDocument.error ||
+                    salesContractDocument.error
                   }
                   retry={() => {
                     invoiceDocument.refresh();
-                    contractDocument.refresh();
+                    purchaseContractDocument.refresh();
+                    salesContractDocument.refresh();
                   }}
                 />
                 {documentCard("invoice", invoiceDocument)}
-                {documentCard("contract", contractDocument)}
+                {documentCard("sales_contract", salesContractDocument)}
+                {documentCard("purchase_contract", purchaseContractDocument)}
               </div>
             ),
           },

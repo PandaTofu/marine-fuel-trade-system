@@ -139,9 +139,13 @@ class OrderRevision(models.Model):
 
 
 class OrderDocument(models.Model):
-    KINDS = [('contract', 'Contract'), ('invoice', 'Invoice')]
+    KINDS = [
+        ('purchase_contract', 'Purchase contract'),
+        ('sales_contract', 'Sales contract'),
+        ('invoice', 'Invoice'),
+    ]
     order = models.ForeignKey(Order, related_name='documents', on_delete=models.PROTECT)
-    kind = models.CharField(max_length=12, choices=KINDS)
+    kind = models.CharField(max_length=20, choices=KINDS)
     content = models.JSONField(default=dict)
     updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     updated_at = models.DateTimeField(auto_now=True)

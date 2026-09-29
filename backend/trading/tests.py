@@ -21,7 +21,7 @@ from core.models import Reference, User
 from .calculations import state, totals, order_numbers
 from .models import Account, DocumentEmail, Entry, Mutation, Order, OrderDocument, OrderRevision, WriteLock
 from .services import account_balance
-from .documents import SALES_TERMS
+from .documents import PURCHASE_TERMS, SALES_TERMS
 
 
 def order_payload(supplied=True):
@@ -84,43 +84,62 @@ class TradingTests(TestCase):
 
     def test_invoice_and_contract_pdf_downloads(self):
         order=self.create_order()
-        for kind in ['invoice','contract']:
+        for kind in ['invoice','purchase_contract','sales_contract']:
             response=self.client.get(f"/api/trading/orders/{order['id']}/{kind}/")
             self.assertEqual(response.status_code,200)
             self.assertEqual(response['Content-Type'],'application/pdf')
             self.assertIn(f'{kind}_',response['Content-Disposition'])
             self.assertTrue(response.content.startswith(b'%PDF-'))
             self.assertGreater(len(response.content),1000)
-        self.assertEqual(len(SALES_TERMS),4)
+        self.assertEqual(len(SALES_TERMS),5)
         self.assertTrue(all(term.strip() for term in SALES_TERMS))
+        self.assertEqual(len(PURCHASE_TERMS),4)
 
     def test_document_edits_are_saved_separately_from_order(self):
         order = self.create_order()
         self.assertEqual(
             set(OrderDocument.objects.filter(order_id=order['id']).values_list('kind', flat=True)),
-            {'invoice', 'contract'},
+            {'invoice', 'purchase_contract', 'sales_contract'},
         )
         self.assertEqual(
             OrderDocument.objects.get(order_id=order['id'], kind='invoice').content['invoice_number'],
             f"{order['number']}-INV",
         )
-        path = f"/api/trading/orders/{order['id']}/documents/contract/"
+        self.assertIn('5,600.00', OrderDocument.objects.get(order_id=order['id'], kind='purchase_contract').content['products'][0]['unit_price'])
+        self.assertIn('6,000.00', OrderDocument.objects.get(order_id=order['id'], kind='sales_contract').content['products'][0]['unit_price'])
+        path = f"/api/trading/orders/{order['id']}/documents/sales_contract/"
         defaults = self.client.get(path).json()['content']
-        self.assertEqual(defaults['reference'], f"{order['number']}-CON")
+        self.assertEqual(defaults['reference'], f"{order['number']}-SC")
         defaults['buyer'] = 'Edited PDF buyer only'
         defaults['terms'] = 'Term one\nTerm two'
         response = self.client.put(path, {'content': defaults}, format='json')
         self.assertEqual(response.status_code, 200, response.data)
-        self.assertEqual(OrderDocument.objects.get(order_id=order['id'], kind='contract').content['buyer'], 'Edited PDF buyer only')
+        self.assertEqual(OrderDocument.objects.get(order_id=order['id'], kind='sales_contract').content['buyer'], 'Edited PDF buyer only')
         self.assertEqual(Order.objects.get(pk=order['id']).customer, '客户 A')
         self.assertEqual(self.client.get(path).json()['content']['buyer'], 'Edited PDF buyer only')
-        self.assertTrue(self.client.get(f"/api/trading/orders/{order['id']}/contract/").content.startswith(b'%PDF-'))
+        self.assertTrue(self.client.get(f"/api/trading/orders/{order['id']}/sales_contract/").content.startswith(b'%PDF-'))
 
         changed = order_payload(False)
         changed.update(version=order['version'], customer='更新后的订单客户')
         response = self.write(f"orders/{order['id']}/", changed, method='patch')
         self.assertEqual(response.status_code, 200, response.data)
-        self.assertEqual(OrderDocument.objects.get(order_id=order['id'], kind='contract').content['buyer'], 'Edited PDF buyer only')
+        self.assertEqual(OrderDocument.objects.get(order_id=order['id'], kind='sales_contract').content['buyer'], 'Edited PDF buyer only')
+
+    def test_non_admin_cannot_read_or_edit_performance_commission(self):
+        order = self.create_order()
+        client = APIClient()
+        client.force_authenticate(self.operator)
+        response = client.get(f"/api/trading/orders/{order['id']}/")
+        self.assertEqual(response.json()['commission_rate'], '0.0000')
+        self.assertEqual(response.json()['salesperson'], '')
+        self.assertEqual(response.json()['numbers']['commission'], '0.00')
+        payload = order_payload()
+        payload.update(version=order['version'], commission_rate='999.0000', salesperson='Hidden change')
+        response = self.write(f"orders/{order['id']}/", payload, method='patch', client=client)
+        self.assertEqual(response.status_code, 200, response.data)
+        row = Order.objects.get(pk=order['id'])
+        self.assertEqual(row.commission_rate, Decimal('50.0000'))
+        self.assertEqual(row.salesperson, '李明')
 
     @override_settings(EMAIL_HOST='smtp.example.com', DEFAULT_FROM_EMAIL='bunker@example.com')
     @patch('trading.views.EmailMessage')

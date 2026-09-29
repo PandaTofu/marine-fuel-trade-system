@@ -75,6 +75,19 @@ class OrderSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'lines': 'one_to_100_lines'})
         return attrs
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        actor = self.context.get('actor') or getattr(self.context.get('request'), 'user', None)
+        if actor is not None and getattr(actor, 'role', None) != 'admin':
+            data['commission_rate'] = '0.0000'
+            data['commission_recipient'] = ''
+            data['salesperson'] = ''
+            data['salesperson_reference'] = None
+            if 'numbers' in data:
+                data['numbers']['commission'] = '0.00'
+                data['numbers']['profit'] = '0.00'
+        return data
+
 
 class AccountSerializer(serializers.ModelSerializer):
     class Meta:

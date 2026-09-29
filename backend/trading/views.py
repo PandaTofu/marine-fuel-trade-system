@@ -43,10 +43,11 @@ def page(rows, params):
     return {'count': count, 'results': rows[(number-1)*size:number*size]}
 
 
-def order_rows(params):
+def order_rows(params, actor=None):
     qs = Order.objects.exclude(state='deleted').prefetch_related('lines', 'entries')
     qs = filtered_dates(qs, params, 'order_date')
-    for field in ['customer', 'supplier', 'port', 'salesperson']:
+    fields = ['customer', 'supplier', 'port'] + (['salesperson'] if getattr(actor, 'role', None) == 'admin' or actor is None else [])
+    for field in fields:
         if params.get(field):
             qs = qs.filter(**{f'{field}__icontains': params[field]})
     if params.get('oil'):
@@ -59,7 +60,7 @@ def order_rows(params):
             qs = qs.filter(state__in=FINANCIAL_ORDER_STATES)
         else:
             qs = qs.filter(state=params['state'])
-    rows = list(OrderSerializer(qs, many=True).data)
+    rows = list(OrderSerializer(qs, many=True, context={'actor': actor}).data)
     for side in ['customer', 'supplier']:
         value = params.get(f'{side}_status')
         if value:
@@ -92,7 +93,7 @@ def summary(rows):
 def orders(request):
     if request.method == 'POST':
         return Response(command(request, 'order.create', lambda: save_order(request.user, request.data)), status=201)
-    rows = order_rows(request.query_params)
+    rows = order_rows(request.query_params, request.user)
     return Response({**page(rows, request.query_params), 'summary':summary(rows)})
 
 
@@ -104,7 +105,7 @@ def order_detail(request, pk):
         row = Order.objects.exclude(state='deleted').prefetch_related('lines','entries').get(pk=pk)
     except Order.DoesNotExist:
         raise BusinessError('not_found',404)
-    return Response(OrderSerializer(row).data)
+    return Response(OrderSerializer(row, context={'actor': request.user}).data)
 
 
 @api_view(['GET'])
@@ -115,7 +116,9 @@ def order_document(request, pk, kind):
         raise BusinessError('not_found', 404)
     saved = OrderDocument.objects.filter(order=row, kind=kind).first()
     document_content = saved.content if saved else None
-    content = invoice_pdf(row, document_content) if kind == 'invoice' else contract_pdf(row, document_content)
+    if kind not in ('invoice', 'purchase_contract', 'sales_contract'):
+        raise BusinessError('not_found', 404)
+    content = invoice_pdf(row, document_content) if kind == 'invoice' else contract_pdf(row, document_content, kind)
     response = HttpResponse(content, content_type='application/pdf')
     response['Content-Disposition'] = f'attachment; filename="{kind}_{row.number}.pdf"'
     return response
@@ -127,7 +130,7 @@ def order_export(request, pk):
         order = Order.objects.exclude(state='deleted').prefetch_related('lines', 'entries').get(pk=pk)
     except Order.DoesNotExist:
         raise BusinessError('not_found', 404)
-    data = OrderSerializer(order).data
+    data = OrderSerializer(order, context={'actor': request.user}).data
     numbers = data['numbers']
     numeric = lambda value: Decimal(str(value)) if value not in (None, '') else ''
     summary_rows = [
@@ -170,7 +173,7 @@ def order_export(request, pk):
 
 @api_view(['GET'])
 def orders_export(request):
-    rows = order_rows(request.query_params)
+    rows = order_rows(request.query_params, request.user)
     numeric = lambda value: Decimal(str(value)) if value not in (None, '') else ''
     summary_rows = [[
         '订单编号', '订单日期', '订单状态', '客户', '供应商', '船名', 'IMO', '港口',
@@ -208,7 +211,7 @@ def orders_export(request):
 
 @api_view(['GET', 'PUT'])
 def order_document_content(request, pk, kind):
-    if kind not in ('invoice', 'contract'):
+    if kind not in ('invoice', 'purchase_contract', 'sales_contract'):
         raise BusinessError('not_found', 404)
     try:
         row = Order.objects.exclude(state='deleted').prefetch_related('lines', 'entries').get(pk=pk)
@@ -236,12 +239,14 @@ def order_document_content(request, pk, kind):
 
 def document_email_defaults(order, document):
     invoice = document.kind == 'invoice'
+    purchase = document.kind == 'purchase_contract'
     content = document.content
     company, _ = Company.objects.get_or_create(pk=1)
     company_name = company.name_en or company.name
-    customer = order.customer_reference if order.customer_reference_id else None
-    recipients = [customer.email] if customer and customer.email else []
-    number = str(content.get('invoice_number' if invoice else 'reference') or f'{order.number}-{"INV" if invoice else "CON"}')
+    party = (order.supplier_reference if order.supplier_reference_id else None) if purchase else (order.customer_reference if order.customer_reference_id else None)
+    recipients = [party.email] if party and party.email else []
+    suffix = 'INV' if invoice else ('PC' if purchase else 'SC')
+    number = str(content.get('invoice_number' if invoice else 'reference') or f'{order.number}-{suffix}')
     attachment_stem = ''.join(character if character.isalnum() or character in '._-' else '_' for character in number)[:160]
     if invoice:
         subject = f'Invoice {number} – {order.vessel} – {company_name}'
@@ -261,10 +266,11 @@ def document_email_defaults(order, document):
             f'Best regards,\n{company_name}\nEmail: {company.email}'
         )
     else:
-        subject = f'Sales Contract {number} – {order.vessel} – {company_name}'
+        contract_name = 'Purchase Contract' if purchase else 'Sales Contract'
+        subject = f'{contract_name} {number} – {order.vessel} – {company_name}'
         products = ', '.join(str(line.get('name') or '') for line in content.get('products', []) if line.get('name')) or '—'
         body = (
-            f'Dear Customer,\n\nPlease find attached sales contract {number} for the marine fuel order detailed below.\n\n'
+            f'Dear {"Supplier" if purchase else "Customer"},\n\nPlease find attached {contract_name.lower()} {number} for the marine fuel order detailed below.\n\n'
             f'Contract details:\n- Order number: {order.number}\n- Contract number: {number}\n'
             f'- Vessel: {order.vessel}\n- Port: {order.port}\n- Estimated delivery period: {content.get("eta") or "—"}\n'
             f'- Product: {products}\n\nPlease review the attached contract and contact us if any amendment is required.\n\n'
@@ -276,14 +282,14 @@ def document_email_defaults(order, document):
         'subject': subject,
         'body': body,
         'attachment_name': f'{attachment_stem}.pdf',
-        'customers': list(Reference.objects.filter(kind='customer', is_active=True).exclude(email='').values('id', 'name', 'email')),
+        'customers': list(Reference.objects.filter(kind='supplier' if purchase else 'customer', is_active=True).exclude(email='').values('id', 'name', 'email')),
         'from_email': settings.DEFAULT_FROM_EMAIL,
     }
 
 
 @api_view(['GET', 'POST'])
 def order_document_email(request, pk, kind):
-    if kind not in ('invoice', 'contract'):
+    if kind not in ('invoice', 'purchase_contract', 'sales_contract'):
         raise BusinessError('not_found', 404)
     try:
         order = Order.objects.exclude(state='deleted').prefetch_related('lines', 'entries').get(pk=pk)
@@ -328,7 +334,7 @@ def order_document_email(request, pk, kind):
         attachment_name=defaults['attachment_name'],
         sent_by=request.user,
     )
-    pdf = invoice_pdf(order, document.content) if kind == 'invoice' else contract_pdf(order, document.content)
+    pdf = invoice_pdf(order, document.content) if kind == 'invoice' else contract_pdf(order, document.content, kind)
     company, _ = Company.objects.get_or_create(pk=1)
     message = EmailMessage(
         subject=values['subject'],
@@ -401,7 +407,14 @@ def order_history(request, pk):
         row = Order.objects.get(pk=pk)
     except Order.DoesNotExist:
         raise BusinessError('not_found',404)
-    return Response([{'version':rev.version,'action':rev.action,'reason':rev.reason,'actor':rev.actor.username,'created_at':rev.created_at.isoformat(),'snapshot':rev.snapshot} for rev in row.revisions.select_related('actor').all()])
+    results = []
+    for rev in row.revisions.select_related('actor').all():
+        snapshot = {**rev.snapshot}
+        if request.user.role != 'admin':
+            snapshot.update(commission_rate='0.0000', commission_recipient='', salesperson='', salesperson_reference=None)
+            snapshot['numbers'] = {**snapshot.get('numbers', {}), 'commission': '0.00', 'profit': '0.00'}
+        results.append({'version':rev.version,'action':rev.action,'reason':rev.reason,'actor':rev.actor.username,'created_at':rev.created_at.isoformat(),'snapshot':snapshot})
+    return Response(results)
 
 
 @api_view(['GET'])
@@ -479,7 +492,7 @@ def ledger_reverse(request, pk):
 
 @api_view(['GET'])
 def dashboard(request):
-    rows=order_rows({})
+    rows=order_rows({}, request.user)
     result=summary(rows)
     month=timezone.localdate().strftime('%Y-%m')
     monthly=summary([row for row in rows if row['order_date'].startswith(month)])
@@ -498,7 +511,7 @@ def forecast(request):
         raise BusinessError('invalid')
     today = timezone.localdate()
     rows = []
-    for order in order_rows({}):
+    for order in order_rows({}, request.user):
         if order['state'] not in ('supplied', 'completed') or not order['actual_date']:
             continue
         if request.query_params.get('customer') and request.query_params['customer'].lower() not in order['customer'].lower():

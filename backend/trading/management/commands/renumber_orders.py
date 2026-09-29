@@ -45,9 +45,10 @@ class Command(BaseCommand):
                 Order.objects.filter(pk=order.pk).update(number=target)
                 for document in OrderDocument.objects.filter(order=order):
                     content = dict(document.content or {})
-                    if document.kind == 'contract':
-                        content['reference'] = f'{target}-CON'
-                    else:
+                    if document.kind in ('contract', 'purchase_contract', 'sales_contract'):
+                        suffix = 'PC' if document.kind == 'purchase_contract' else 'SC'
+                        content['reference'] = f'{target}-{suffix}'
+                    elif document.kind == 'invoice':
                         content.update({
                             'reference_number': f'{target}-INV',
                             'invoice_number': f'{target}-INV',

@@ -21,11 +21,18 @@ from .calculations import money as rounded_money, order_numbers
 COMPANY = 'Bond Shipping and Trading Limited'
 COMPANY_ADDRESS = 'ROOM E18, NO.107, 1/F, BLK A, HANGWAI IND CTR, NO.6, KIN TAI ST, TUEN MUN, N.T., HONG KONG'
 COMPANY_EMAIL = 'bunker@bond-shipping.com'
+PURCHASE_TERMS = (
+    'The seller warrants that the bunkers delivered under this contract do not contain chemical waste, waste lubricating oil of any kind or other substances detrimental to vessel, her engine(s) and/or her crew.',
+    'Fuel Oil shall conform to MARPOL 73/78, Annex VI, including regulations 14(1) and 18(1), Appendix V and Resolution MEPC 96 (47). The Certificate of Origin shall comply with all applicable US, EU and other sanctions.',
+    'The physical supplier shall not place a no-lien or disclaimer stamp on the BDN without prior written approval from Bond Shipping and Trading Limited.',
+    'Notice for quality claims must be made within 21 days from delivery.',
+)
 SALES_TERMS = (
-    'Delivery always subject to weather conditions.',
-    "Overtime / extra charges, if any, are for Buyer's account.",
-    'Notice for quality complaints must be made within 14 days from delivery.',
-    'The Seller retains title to supplied products until invoices are fully settled.',
+    'Payment shall be made by T.T. remittance in full, free and clear of any deduction, offset or counterclaim in U.S. Dollars on or before the due date to our designated bank.',
+    'Any delay in payment and/or refund shall entitle either party to interest at two (2) percent per month or any part thereof.',
+    "If the buyer has overdue payments on the delivery date or the seller has reasonable concerns regarding the buyer's payment capability, the seller reserves the right of non-performance.",
+    'Any quantity claim must be noted at delivery and presented in writing within seven (7) days, otherwise it is deemed waived.',
+    "Any quality or description claim must be notified in writing within fourteen (14) days from delivery, otherwise it is deemed waived. The nominated physical supplier's terms and conditions apply.",
 )
 pdfmetrics.registerFont(UnicodeCIDFont('STSong-Light'))
 
@@ -54,45 +61,52 @@ def document_defaults(order, kind):
     eta = ''
     if order.estimated_start_date and order.estimated_end_date:
         eta = f'{day(order.estimated_start_date)} - {day(order.estimated_end_date)}'
-    if kind == 'contract':
-        document_number = f'{number}-CON'
-        minimum = sum((rounded_money(line.ordered_qty_min * line.sale_price) for line in order.lines.all()), Decimal('0'))
-        maximum = sum((rounded_money(line.ordered_qty_max * line.sale_price) for line in order.lines.all()), Decimal('0'))
+    if kind in ('purchase_contract', 'sales_contract'):
+        purchase = kind == 'purchase_contract'
+        suffix = 'PC' if purchase else 'SC'
+        price_field = 'cost_price' if purchase else 'sale_price'
+        minimum = sum((rounded_money(line.ordered_qty_min * getattr(line, price_field)) for line in order.lines.all()), Decimal('0'))
+        maximum = sum((rounded_money(line.ordered_qty_max * getattr(line, price_field)) for line in order.lines.all()), Decimal('0'))
         total = money(minimum) if minimum == maximum else f'{money(minimum)} - {money(maximum)}'
+        products = []
+        for line in order.lines.all():
+            price = getattr(line, price_field)
+            amount = money(rounded_money(line.ordered_qty_min * price)) if line.ordered_qty_min == line.ordered_qty_max else f'{money(rounded_money(line.ordered_qty_min * price))} - {money(rounded_money(line.ordered_qty_max * price))}'
+            products.append({'name': line.oil, 'quantity': range_text(line), 'unit_price': f'{money(price)} / MT', 'amount': amount})
+        costs = [
+            ('Supplier payment fee' if purchase else 'Customer bank fee', order.supplier_fee if purchase else order.customer_fee),
+            ('Barging Fee', order.berth_fee),
+            ('Exceptional fee', order.exceptional_fee),
+        ]
         return {
-            'reference': document_number, 'date': day(order.order_date, True),
-            'intro': 'Following your orders and further our telecom, we confirm having arranged the following bunkers.',
+            'reference': f'{number}-{suffix}', 'date': day(order.order_date, True),
+            'document_title': 'BUNKER NOMINATION' if purchase else 'SALES ORDER',
+            'intro': 'Following your orders and further our telecom, we confirm having arranged the following bunkers.' if purchase else 'We hereby confirm the following Sales Order:',
             'vessel': order.vessel, 'imo': order.imo, 'port': order.port, 'eta': eta,
-            'buyer': order.customer, 'seller': COMPANY, 'supplier': order.supplier,
-            'products': [
-                {'name': line.oil, 'quantity': range_text(line),
-                 'unit_price': f'{money(line.sale_price)} / MT',
-                 'amount': money(rounded_money(line.ordered_qty_min * line.sale_price)) if line.ordered_qty_min == line.ordered_qty_max else f'{money(rounded_money(line.ordered_qty_min * line.sale_price))} - {money(rounded_money(line.ordered_qty_max * line.sale_price))}'}
-                for line in order.lines.all()
-            ],
-            'total': total,
-            'additional_cost': '\n'.join(
-                f'{name}: {money(amount)}' for name, amount in [
-                    ('Customer bank fee', order.customer_fee), ('Barge fee', order.berth_fee),
-                    ('Exceptional fee', order.exceptional_fee)] if amount),
-            'payment': order.customer_term_description,
-            'terms': '\n'.join(SALES_TERMS),
-            'closing': 'Please confirm stem in order.\n\nBest Regards,\n' + COMPANY,
+            'buyer': COMPANY if purchase else order.customer,
+            'seller': order.supplier if purchase else COMPANY,
+            'supplier': order.supplier, 'products': products, 'total': total,
+            'additional_cost': '\n'.join(f'{name}: {money(amount)}' for name, amount in costs if amount),
+            'payment': order.supplier_term_description if purchase else order.customer_term_description,
+            'terms': '\n'.join(PURCHASE_TERMS if purchase else SALES_TERMS),
+            'closing': ('Please forward invoices to bunker@bond-shipping.com. Original BDN shall be available upon request.\nPlease confirm stem in order.\n\nBest Regards,\n' if purchase else 'We thank you for your support.\n\nTrading Department\n') + COMPANY,
         }
     document_number = f'{number}-INV'
+    products = [
+        {'name': line.oil, 'quantity': f'{line.actual_qty:.3f}' if line.actual_qty is not None else '',
+         'unit': 'MT' if line.actual_qty is not None else '',
+         'unit_price': f'{rounded_money(line.sale_price):.2f}',
+         'amount': f'{rounded_money((line.actual_qty or 0) * line.sale_price):.2f}' if line.actual_qty is not None else ''}
+        for line in order.lines.all()
+    ]
+    if order.berth_fee:
+        products.append({'name': 'Barging Fee', 'quantity': '1.000', 'unit': '', 'unit_price': f'{rounded_money(order.berth_fee):.2f}', 'amount': f'{rounded_money(order.berth_fee):.2f}'})
     return {
         'reference_number': document_number, 'invoice_number': document_number,
         'customer': order.customer, 'vessel': order.vessel, 'imo': order.imo,
         'port': order.port, 'invoice_date': day(timezone.localdate()),
         'delivery_date': day(order.actual_date), 'due_date': day(numbers['customer_due']),
-        'customer_reference': '',
-        'products': [
-            {'name': line.oil, 'quantity': f'{line.actual_qty:.3f}' if line.actual_qty is not None else '',
-             'unit': 'MT' if line.actual_qty is not None else '',
-             'unit_price': f'{rounded_money(line.sale_price):.2f}',
-             'amount': f'{rounded_money((line.actual_qty or 0) * line.sale_price):.2f}' if line.actual_qty is not None else ''}
-            for line in order.lines.all()
-        ],
+        'customer_reference': '', 'products': products,
         'currency': 'USD', 'beneficiary_name': COMPANY.upper(),
         'beneficiary_address': COMPANY_ADDRESS, 'bank_name': 'DBS BANK (HONGKONG) LIMITED',
         'account_number': '002836028', 'swift': 'DHBKHKHH',
@@ -185,14 +199,15 @@ def range_text(line):
     return f'{line.ordered_qty_min:.3f} - {line.ordered_qty_max:.3f} MT'
 
 
-def contract_pdf(order, content=None):
+def contract_pdf(order, content=None, kind='sales_contract'):
     sheet, body, small = styles()
-    data = {**document_defaults(order, 'contract'), **(content or {})}
+    data = {**document_defaults(order, kind), **(content or {})}
+    purchase = kind == 'purchase_contract'
     number=data['reference']
     story=header(COMPANY_ADDRESS, COMPANY_EMAIL)
     title=ParagraphStyle('ContractTitle',parent=sheet['Heading1'],fontName='Helvetica-Bold',fontSize=17,alignment=TA_CENTER,spaceAfter=8)
     right=ParagraphStyle('Right',parent=body,alignment=TA_RIGHT)
-    story += [Paragraph('BUNKER CONFIRMATION',title),Paragraph(f'Ref: {value(number)}<br/>Date: {value(data["date"])}',right),Spacer(1,4*mm),
+    story += [Paragraph(value(data['document_title']),title),Paragraph(f'Ref: {value(number)}<br/>Date: {value(data["date"])}',right),Spacer(1,4*mm),
               Paragraph(value(data['intro']),body),Spacer(1,3*mm),Paragraph('<b>Vessel Information</b>',sheet['Heading3'])]
     vessel=Table([[Paragraph(f'<b>{k}</b>',body),Paragraph(value(v),body)] for k,v in [('Vessel:',data['vessel']),('IMO:',data['imo']),('Port:',data['port']),('ETA:',data['eta']),('Buyer:',data['buyer']),('Seller:',data['seller']),('Supplier:',data['supplier'])]],colWidths=[24*mm,153*mm])
     vessel.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'TOP'),('TOPPADDING',(0,0),(-1,-1),2),('BOTTOMPADDING',(0,0),(-1,-1),2)]))
@@ -205,5 +220,6 @@ def contract_pdf(order, content=None):
     additional='<br/>'.join(value(line) for line in str(data['additional_cost']).splitlines())
     terms='<br/>'.join(f'{index}. {value(term)}' for index,term in enumerate(str(data['terms']).splitlines(),1) if term.strip())
     closing='<br/>'.join(value(line) for line in str(data['closing']).splitlines())
-    story += [vessel,Spacer(1,3*mm),products,Spacer(1,3*mm),Paragraph('<b>Additional Cost</b>',sheet['Heading3']),Paragraph(additional,body),Spacer(1,2*mm),Paragraph('<b>Payment</b>',sheet['Heading3']),Paragraph(value(data['payment']),body),Spacer(1,2*mm),Paragraph('<b>Terms of Sale</b>',sheet['Heading3']),Paragraph(terms,body),Spacer(1,5*mm),KeepTogether([Paragraph(f'<b>{closing}</b>',body)]),Spacer(1,4*mm),Paragraph('Customer reference: &nbsp; · &nbsp; Payment instruction: BY ELECTRONIC FUND TRANSFER',small)]
-    return pdf(story,f'Bunker Confirmation {number}')
+    terms_title = 'Terms of Purchase' if purchase else 'Terms of Sale'
+    story += [vessel,Spacer(1,3*mm),products,Spacer(1,3*mm),Paragraph('<b>Additional Cost</b>',sheet['Heading3']),Paragraph(additional or '—',body),Spacer(1,2*mm),Paragraph('<b>Payment</b>',sheet['Heading3']),Paragraph(value(data['payment']),body),Spacer(1,2*mm),Paragraph(f'<b>{terms_title}</b>',sheet['Heading3']),Paragraph(terms,body),Spacer(1,5*mm),KeepTogether([Paragraph(f'<b>{closing}</b>',body)])]
+    return pdf(story,f'{data["document_title"]} {number}')

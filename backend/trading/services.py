@@ -193,7 +193,7 @@ def revision(order, actor, action, reason='', bump=True):
     snapshot = dict(OrderSerializer(order).data)
     OrderRevision.objects.create(order=order, actor=actor, version=order.version, action=action, reason=reason, snapshot=snapshot)
     Audit.objects.create(actor=actor, action=f'order_{action}', target=str(order.pk))
-    return snapshot
+    return dict(OrderSerializer(order, context={'actor': actor}).data)
 
 
 def sync_order_state(order):
@@ -232,12 +232,15 @@ def save_order(actor, payload, pk=None):
         if payload.get('desired_state') == 'void':
             close_order(row, actor, payload.get('version'), str(payload.get('reason', '')), void=True)
             row.refresh_from_db()
-            return dict(OrderSerializer(row).data)
+            return dict(OrderSerializer(row, context={'actor': actor}).data)
     if len(str(payload.get('reason', ''))) > 1000:
         raise BusinessError('invalid')
     serializer = OrderSerializer(row, data=payload, partial=row is not None)
     serializer.is_valid(raise_exception=True)
     values = dict(serializer.validated_data)
+    if actor.role != 'admin':
+        for field in ('commission_rate', 'commission_recipient', 'salesperson', 'salesperson_reference'):
+            values.pop(field, None)
     lines = values.pop('lines', None)
     save_as_draft = values.pop('save_as_draft', False)
     desired_state = values.pop('desired_state', None)
@@ -263,7 +266,7 @@ def save_order(actor, payload, pk=None):
     if creating:
         OrderDocument.objects.bulk_create([
             OrderDocument(order=row, kind=kind, content=document_defaults(row, kind), updated_by=actor)
-            for kind in ('invoice', 'contract')
+            for kind in ('invoice', 'purchase_contract', 'sales_contract')
         ])
     if settlements and not save_as_draft:
         paid = settlement_totals(row.entries.all())
@@ -340,7 +343,7 @@ def settle(order, actor, values):
     order.save()
     validate_paid(order)
     sync_order_state(order)
-    return revision(order, actor, 'settlement', reason) if changed else dict(OrderSerializer(order).data)
+    return revision(order, actor, 'settlement', reason) if changed else dict(OrderSerializer(order, context={'actor': actor}).data)
 
 
 def refund(order, actor, values):

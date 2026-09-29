@@ -3,6 +3,7 @@ import {
   App,
   Button,
   Card,
+  Dropdown,
   Form,
   Input,
   Select,
@@ -12,9 +13,11 @@ import {
   Tooltip,
 } from "antd";
 import {
+  DownOutlined,
   FileDoneOutlined,
   FileExcelOutlined,
   FilePdfOutlined,
+  UpOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { useTranslation } from "react-i18next";
@@ -29,7 +32,7 @@ import {
   useResource,
 } from "./shared";
 import { OrderDetail, OrderEditor, SettlementEditor } from "./OrderForms";
-import { DocumentEditor } from "./DocumentEditor";
+import { DocumentEditor, type DocumentKind } from "./DocumentEditor";
 import { EmailSender } from "./EmailSender";
 import type { Order, OrderList } from "./types";
 
@@ -64,6 +67,7 @@ export default function Orders({
     ),
     [page, setPage] = useState(1);
   const [filterForm] = Form.useForm();
+  const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
   const [activeTab, setActiveTab] = useState(() =>
     settlements ? "list" : savedOrderWorkspace().activeTab || "list",
   );
@@ -86,11 +90,11 @@ export default function Orders({
     ),
     [document, setDocument] = useState<{
       orderId: number;
-      kind: "contract" | "invoice";
+      kind: DocumentKind;
     } | null>(null),
     [emailDocument, setEmailDocument] = useState<{
       orderId: number;
-      kind: "contract" | "invoice";
+      kind: DocumentKind;
     } | null>(null);
   useEffect(() => {
     if (settlements) return;
@@ -133,7 +137,7 @@ export default function Orders({
       render: (_: unknown, o: Order) => o.lines.map((l) => l.oil).join(" / "),
     },
     ...(!settlements
-      ? ["sales", "cost", "commission", "profit"]
+      ? ["sales", "cost", ...(user?.role === "admin" ? ["commission", "profit"] : [])]
       : [
           "customer_deposit",
           "customer_received",
@@ -197,16 +201,25 @@ export default function Orders({
             <Space size={6}>
               <Tooltip title={t("biz.exportContract")}>
                 <span>
-                  <Button
-                    className="order-action-button contract"
-                    size="small"
+                  <Dropdown
                     disabled={o.state === "void"}
-                    aria-label={t("biz.exportContract")}
-                    icon={<FilePdfOutlined />}
-                    onClick={() =>
-                      setDocument({ orderId: o.id, kind: "contract" })
-                    }
-                  />
+                    menu={{
+                      items: [
+                        { key: "sales_contract", label: t("biz.salesContract") },
+                        { key: "purchase_contract", label: t("biz.purchaseContract") },
+                      ],
+                      onClick: ({ key }) =>
+                        setDocument({ orderId: o.id, kind: key as DocumentKind }),
+                    }}
+                  >
+                    <Button
+                      className="order-action-button contract"
+                      size="small"
+                      disabled={o.state === "void"}
+                      aria-label={t("biz.exportContract")}
+                      icon={<FilePdfOutlined />}
+                    />
+                  </Dropdown>
                 </span>
               </Tooltip>
               <Tooltip title={t("biz.issueInvoice")}>
@@ -327,8 +340,7 @@ export default function Orders({
                   "order_count",
                   "sales",
                   "cost",
-                  "commission",
-                  "profit",
+                  ...(user?.role === "admin" ? ["commission", "profit"] : []),
                 ]
           }
         />
@@ -344,80 +356,95 @@ export default function Orders({
             setPage(1);
           }}
         >
-          {["q", "customer", "supplier", "port", "oil", "salesperson"].map(
-            (key) => (
-              <Form.Item
-                key={key}
-                name={key}
-                label={t(`biz.${key === "q" ? "query" : key}`)}
-              >
-                <Input allowClear />
+          <div className="order-filter-basic">
+            <Form.Item name="q" label={t("biz.query")}>
+              <Input allowClear />
+            </Form.Item>
+            <Form.Item name="supplier" label={t("biz.supplier")}>
+              <Input allowClear />
+            </Form.Item>
+            {["date_from", "date_to"].map((key) => (
+              <Form.Item key={key} name={key} label={t(`biz.${key}`)}>
+                <Input type="date" />
               </Form.Item>
-            ),
-          )}
-          {["date_from", "date_to"].map((key) => (
-            <Form.Item key={key} name={key} label={t(`biz.${key}`)}>
-              <Input type="date" />
-            </Form.Item>
-          ))}
-          <Form.Item name="state" label={t("biz.supplyState")}>
-            <Select
-              allowClear
-              style={{ width: 140 }}
-              options={(
-                settlements
-                  ? ["financial", "confirmed", "supplied", "completed"]
-                  : ["draft", "confirmed", "supplied", "completed", "void"]
-              ).map((value) => ({ value, label: t(`biz.${value}`) }))}
-            />
-          </Form.Item>
-          {["customer_status", "supplier_status"].map((key) => (
-            <Form.Item key={key} name={key} label={t(`biz.${key}`)}>
+            ))}
+            <Form.Item name="state" label={t("biz.orderStatus")}>
               <Select
                 allowClear
                 style={{ width: 140 }}
-                options={[
-                  "pending",
-                  "not_due",
-                  "partial",
-                  "overdue",
-                  "settled",
-                ].map((value) => ({ value, label: t(`biz.${value}`) }))}
+                options={(
+                  settlements
+                    ? ["financial", "confirmed", "supplied", "completed"]
+                    : ["draft", "confirmed", "supplied", "completed", "void"]
+                ).map((value) => ({ value, label: t(`biz.${value}`) }))}
               />
             </Form.Item>
-          ))}
-          {settlements && (
-            <Form.Item name="settlement_scope" label={t("biz.filter")}>
-              <Select
-                allowClear
-                style={{ width: 140 }}
-                options={["partial", "overdue", "settled"].map((value) => ({
-                  value,
-                  label: t(`biz.${value}`),
-                }))}
-              />
+            <Form.Item>
+              <Button htmlType="submit" type="primary">
+                {t("biz.filter")}
+              </Button>
             </Form.Item>
-          )}
-          <Form.Item>
-            <Button htmlType="submit" type="primary">
-              {t("biz.filter")}
-            </Button>
-          </Form.Item>
-          <Form.Item>
-            <Button
-              onClick={() => {
-                filterForm.resetFields();
-                filterForm.setFieldValue(
-                  "state",
-                  settlements ? "financial" : undefined,
-                );
-                setFilters(settlements ? { state: "financial" } : {});
-                setPage(1);
-              }}
-            >
-              {t("biz.reset")}
-            </Button>
-          </Form.Item>
+            <Form.Item>
+              <Button
+                onClick={() => {
+                  filterForm.resetFields();
+                  filterForm.setFieldValue(
+                    "state",
+                    settlements ? "financial" : undefined,
+                  );
+                  setFilters(settlements ? { state: "financial" } : {});
+                  setPage(1);
+                }}
+              >
+                {t("biz.reset")}
+              </Button>
+            </Form.Item>
+            <Form.Item>
+              <Button
+                type="link"
+                icon={advancedFiltersOpen ? <UpOutlined /> : <DownOutlined />}
+                onClick={() => setAdvancedFiltersOpen((open) => !open)}
+              >
+                {t(
+                  advancedFiltersOpen
+                    ? "biz.hideAdvancedFilters"
+                    : "biz.advancedFilters",
+                )}
+              </Button>
+            </Form.Item>
+          </div>
+          <div className="order-filter-advanced" hidden={!advancedFiltersOpen}>
+            {["customer", "port", "oil", ...(user?.role === "admin" ? ["salesperson"] : [])].map(
+              (key) => (
+                <Form.Item key={key} name={key} label={t(`biz.${key}`)}>
+                  <Input allowClear />
+                </Form.Item>
+              ),
+            )}
+            {["customer_status", "supplier_status"].map((key) => (
+              <Form.Item key={key} name={key} label={t(`biz.${key}`)}>
+                <Select
+                  allowClear
+                  style={{ width: 140 }}
+                  options={["pending", "not_due", "partial", "overdue", "settled"].map(
+                    (value) => ({ value, label: t(`biz.${value}`) }),
+                  )}
+                />
+              </Form.Item>
+            ))}
+            {settlements && (
+              <Form.Item name="settlement_scope" label={t("biz.filter")}>
+                <Select
+                  allowClear
+                  style={{ width: 140 }}
+                  options={["partial", "overdue", "settled"].map((value) => ({
+                    value,
+                    label: t(`biz.${value}`),
+                  }))}
+                />
+              </Form.Item>
+            )}
+          </div>
         </Form>
       </Card>
       <div className="business-toolbar">
