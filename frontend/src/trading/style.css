@@ -34,8 +34,12 @@
 .business-filters .ant-form-item {
   margin-bottom: 0;
 }
+.business-filters .ant-form-item-label {
+  padding-bottom: 6px;
+}
 .business-filters .ant-input {
-  max-width: 185px;
+  width: 100%;
+  max-width: none;
 }
 .order-filter-basic,
 .order-filter-advanced {
@@ -47,19 +51,28 @@
 .order-filter-basic {
   flex-wrap: nowrap;
 }
-.order-filter-basic > .ant-form-item:first-child {
+.order-filter-search {
   flex: 1 1 230px;
-  min-width: 190px;
+  min-width: 210px;
 }
-.order-filter-basic > .ant-form-item:first-child .ant-input {
-  width: 100%;
-  max-width: none;
+.order-filter-supplier {
+  flex: 0 1 190px;
+  min-width: 150px;
+}
+.order-filter-date {
+  flex: 0 0 170px;
+}
+.order-filter-state {
+  flex: 0 0 140px;
 }
 .order-filter-advanced {
   flex-wrap: wrap;
   padding-top: 16px;
   margin-top: 16px;
   border-top: 1px solid #e5ecef;
+}
+.order-filter-advanced > .ant-form-item {
+  width: 185px;
 }
 .order-filter-advanced[hidden] {
   display: none;
@@ -603,6 +616,15 @@
   }
   .business-filters .ant-form-item {
     width: 100%;
+  }
+  .order-filter-search,
+  .order-filter-supplier,
+  .order-filter-date,
+  .order-filter-state,
+  .order-filter-advanced > .ant-form-item {
+    flex: 1 1 100%;
+    width: 100%;
+    min-width: 0;
   }
   .order-filter-basic,
   .order-filter-advanced {

@@ -17,6 +17,7 @@ import {
   FileDoneOutlined,
   FileExcelOutlined,
   FilePdfOutlined,
+  ReloadOutlined,
   UpOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
@@ -348,7 +349,7 @@ export default function Orders({
       <Card>
         <Form
           form={filterForm}
-          layout="inline"
+          layout="vertical"
           className="business-filters"
           initialValues={settlements ? { state: "financial" } : {}}
           onFinish={(values) => {
@@ -357,18 +358,35 @@ export default function Orders({
           }}
         >
           <div className="order-filter-basic">
-            <Form.Item name="q" label={t("biz.query")}>
+            <Form.Item
+              className="order-filter-search"
+              name="q"
+              label={t("biz.query")}
+            >
               <Input allowClear />
             </Form.Item>
-            <Form.Item name="supplier" label={t("biz.supplier")}>
+            <Form.Item
+              className="order-filter-supplier"
+              name="supplier"
+              label={t("biz.supplier")}
+            >
               <Input allowClear />
             </Form.Item>
             {["date_from", "date_to"].map((key) => (
-              <Form.Item key={key} name={key} label={t(`biz.${key}`)}>
+              <Form.Item
+                className="order-filter-date"
+                key={key}
+                name={key}
+                label={t(`biz.${key}`)}
+              >
                 <Input type="date" />
               </Form.Item>
             ))}
-            <Form.Item name="state" label={t("biz.orderStatus")}>
+            <Form.Item
+              className="order-filter-state"
+              name="state"
+              label={t("biz.orderStatus")}
+            >
               <Select
                 allowClear
                 style={{ width: 140 }}
@@ -385,19 +403,21 @@ export default function Orders({
               </Button>
             </Form.Item>
             <Form.Item>
-              <Button
-                onClick={() => {
-                  filterForm.resetFields();
-                  filterForm.setFieldValue(
-                    "state",
-                    settlements ? "financial" : undefined,
-                  );
-                  setFilters(settlements ? { state: "financial" } : {});
-                  setPage(1);
-                }}
-              >
-                {t("biz.reset")}
-              </Button>
+              <Tooltip title={t("biz.reset")}>
+                <Button
+                  aria-label={t("biz.reset")}
+                  icon={<ReloadOutlined />}
+                  onClick={() => {
+                    filterForm.resetFields();
+                    filterForm.setFieldValue(
+                      "state",
+                      settlements ? "financial" : undefined,
+                    );
+                    setFilters(settlements ? { state: "financial" } : {});
+                    setPage(1);
+                  }}
+                />
+              </Tooltip>
             </Form.Item>
             <Form.Item>
               <Button
