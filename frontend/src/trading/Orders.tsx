@@ -169,7 +169,7 @@ export default function Orders({
     })),
     {
       title: t("biz.action"),
-      width: settlements ? 230 : 280,
+      width: settlements ? 230 : 110,
       fixed: "right",
       render: (_: unknown, o: Order) => (
         <div className="order-row-actions">
@@ -195,20 +195,26 @@ export default function Orders({
             )
           ) : (
             <Space size={6}>
-              <Button
-                size="small"
-                icon={<FilePdfOutlined />}
-                onClick={() => setDocument({ orderId: o.id, kind: "contract" })}
-              >
-                {t("biz.exportContract")}
-              </Button>
-              <Button
-                size="small"
-                icon={<FileDoneOutlined />}
-                onClick={() => setDocument({ orderId: o.id, kind: "invoice" })}
-              >
-                {t("biz.issueInvoice")}
-              </Button>
+              <Tooltip title={t("biz.exportContract")}>
+                <Button
+                  size="small"
+                  aria-label={t("biz.exportContract")}
+                  icon={<FilePdfOutlined />}
+                  onClick={() =>
+                    setDocument({ orderId: o.id, kind: "contract" })
+                  }
+                />
+              </Tooltip>
+              <Tooltip title={t("biz.issueInvoice")}>
+                <Button
+                  size="small"
+                  aria-label={t("biz.issueInvoice")}
+                  icon={<FileDoneOutlined />}
+                  onClick={() =>
+                    setDocument({ orderId: o.id, kind: "invoice" })
+                  }
+                />
+              </Tooltip>
             </Space>
           )}
         </div>
