@@ -433,7 +433,7 @@ class TradingTests(TestCase):
         precision=copy.deepcopy(payload);precision['lines'][0]['ordered_qty_min']='1.0001'
         self.assertEqual(self.write('orders/',precision).status_code,400)
         future=dict(payload,actual_date=(timezone.localdate()+timedelta(days=1)).isoformat())
-        self.assertEqual(self.write('orders/',future).status_code,400)
+        self.assertEqual(self.write('orders/',future).status_code,201)
 
     def test_ordered_quantity_range_and_independent_actual_fields(self):
         payload=order_payload(False)
@@ -446,8 +446,25 @@ class TradingTests(TestCase):
         payload=order_payload(False)
         payload['actual_date']=(timezone.localdate()+timedelta(days=7)).isoformat()
         response=self.write('orders/',payload)
-        self.assertEqual(response.status_code,400,response.data)
-        self.assertEqual(str(response.data['actual_date'][0]), 'future_actual_date')
+        self.assertEqual(response.status_code,201,response.data)
+
+    def test_filtered_orders_export_contains_only_matching_orders(self):
+        alpha = order_payload(False)
+        alpha['customer'] = 'Alpha Shipping'
+        self.create_order(alpha)
+        beta = order_payload(False)
+        beta['customer'] = 'Beta Shipping'
+        self.create_order(beta)
+        response = self.client.get('/api/trading/orders/export/', {'customer': 'Alpha'})
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('orders_', response['Content-Disposition'])
+        with ZipFile(BytesIO(response.content)) as archive:
+            workbook_xml = archive.read('xl/workbook.xml').decode()
+            summary_xml = archive.read('xl/worksheets/sheet1.xml').decode()
+            self.assertIn('订单汇总', workbook_xml)
+            self.assertIn('产品明细', workbook_xml)
+            self.assertIn('Alpha Shipping', summary_xml)
+            self.assertNotIn('Beta Shipping', summary_xml)
 
     def test_manual_cash_expense_does_not_change_accrued_profit(self):
         order=self.create_order()

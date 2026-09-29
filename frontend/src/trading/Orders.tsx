@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   App,
   Button,
@@ -22,7 +22,7 @@ import { useAuth } from "../auth";
 import { ErrorBox } from "../components";
 import {
   cash,
-  downloadOrderExcel,
+  downloadOrdersExcel,
   Metrics,
   query,
   Status,
@@ -32,6 +32,24 @@ import { OrderDetail, OrderEditor, SettlementEditor } from "./OrderForms";
 import { DocumentEditor } from "./DocumentEditor";
 import { EmailSender } from "./EmailSender";
 import type { Order, OrderList } from "./types";
+
+const ORDER_WORKSPACE_KEY = "marine-order-workspace";
+const NEW_ORDER_DRAFT_KEY = "marine-order-draft-new";
+
+type SavedOrderWorkspace = {
+  activeTab?: string;
+  newOrderOpen?: boolean;
+  detail?: Order | null;
+  editor?: Order | null;
+};
+
+function savedOrderWorkspace(): SavedOrderWorkspace {
+  try {
+    return JSON.parse(sessionStorage.getItem(ORDER_WORKSPACE_KEY) || "{}") || {};
+  } catch {
+    return {};
+  }
+}
 
 export default function Orders({
   settlements = false,
@@ -46,18 +64,26 @@ export default function Orders({
     ),
     [page, setPage] = useState(1);
   const [filterForm] = Form.useForm();
-  const [activeTab, setActiveTab] = useState("list");
-  const [newOrderOpen, setNewOrderOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState(() =>
+    settlements ? "list" : savedOrderWorkspace().activeTab || "list",
+  );
+  const [newOrderOpen, setNewOrderOpen] = useState(() =>
+    settlements ? false : Boolean(savedOrderWorkspace().newOrderOpen),
+  );
   const [exportError, setExportError] = useState("");
   const [documentRevision, setDocumentRevision] = useState(0);
   const r = useResource<OrderList>(
     "trading/orders/?" + query({ ...filters, page }),
   );
-  const [editor, setEditor] = useState<Order | null>(null),
+  const [editor, setEditor] = useState<Order | null>(() =>
+      settlements ? null : savedOrderWorkspace().editor || null,
+    ),
     [payment, setPayment] = useState<{ order: Order; refund: boolean } | null>(
       null,
     ),
-    [detail, setDetail] = useState<Order | null>(null),
+    [detail, setDetail] = useState<Order | null>(() =>
+      settlements ? null : savedOrderWorkspace().detail || null,
+    ),
     [document, setDocument] = useState<{
       orderId: number;
       kind: "contract" | "invoice";
@@ -66,6 +92,13 @@ export default function Orders({
       orderId: number;
       kind: "contract" | "invoice";
     } | null>(null);
+  useEffect(() => {
+    if (settlements) return;
+    sessionStorage.setItem(
+      ORDER_WORKSPACE_KEY,
+      JSON.stringify({ activeTab, newOrderOpen, detail, editor }),
+    );
+  }, [activeTab, detail, editor, newOrderOpen, settlements]);
   const refresh = () => {
     r.refresh();
   };
@@ -136,7 +169,8 @@ export default function Orders({
     })),
     {
       title: t("biz.action"),
-      width: 520,
+      width: settlements ? 230 : 280,
+      fixed: "right",
       render: (_: unknown, o: Order) => (
         <div className="order-row-actions">
           {settlements ? (
@@ -163,20 +197,6 @@ export default function Orders({
             <Space size={6}>
               <Button
                 size="small"
-                icon={<FileExcelOutlined />}
-                onClick={async () => {
-                  setExportError("");
-                  try {
-                    await downloadOrderExcel(o.id, o.number);
-                  } catch (error) {
-                    setExportError((error as Error).message);
-                  }
-                }}
-              >
-                {t("biz.exportOrderExcel")}
-              </Button>
-              <Button
-                size="small"
                 icon={<FilePdfOutlined />}
                 onClick={() => setDocument({ orderId: o.id, kind: "contract" })}
               >
@@ -200,6 +220,7 @@ export default function Orders({
     setActiveTab("new-order");
   };
   const closeNewOrder = () => {
+    sessionStorage.removeItem(NEW_ORDER_DRAFT_KEY);
     setNewOrderOpen(false);
     setActiveTab("list");
   };
@@ -214,6 +235,7 @@ export default function Orders({
     });
   };
   const closeOrderEditor = () => {
+    if (editor) sessionStorage.removeItem(`marine-order-draft-${editor.id}`);
     setEditor(null);
     setActiveTab(detail ? "order-detail" : "list");
   };
@@ -386,9 +408,24 @@ export default function Orders({
       </Card>
       <div className="business-toolbar">
         {!settlements && (
-          <Button type="primary" onClick={openNewOrder}>
-            {t("biz.createOrder")}
-          </Button>
+          <>
+            <Button type="primary" onClick={openNewOrder}>
+              {t("biz.createOrder")}
+            </Button>
+            <Button
+              icon={<FileExcelOutlined />}
+              onClick={async () => {
+                setExportError("");
+                try {
+                  await downloadOrdersExcel(filters);
+                } catch (error) {
+                  setExportError((error as Error).message);
+                }
+              }}
+            >
+              {t("biz.exportOrderExcel")}
+            </Button>
+          </>
         )}
       </div>
       <ErrorBox error={r.error || exportError} retry={r.refresh} />
@@ -414,6 +451,7 @@ export default function Orders({
         <div hidden={activeTab !== "new-order"}>
           <OrderEditor
             embedded
+            storageKey={NEW_ORDER_DRAFT_KEY}
             onClose={closeNewOrder}
             onSaved={(saved) => {
               refresh();
@@ -429,6 +467,7 @@ export default function Orders({
           <OrderEditor
             embedded
             order={editor}
+            storageKey={`marine-order-draft-${editor.id}`}
             onClose={closeOrderEditor}
             onSaved={(saved) => {
               refresh();

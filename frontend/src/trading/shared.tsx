@@ -489,3 +489,24 @@ export async function downloadOrderExcel(orderId: number, orderNumber: string) {
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+export async function downloadOrdersExcel(filters: Record<string, unknown>) {
+  const parameters = query(filters);
+  const res = await fetch(
+    `/api/trading/orders/export/${parameters ? `?${parameters}` : ""}`,
+    { credentials: "same-origin" },
+  );
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ code: "server_error" }));
+    if (["session_expired", "not_authenticated"].includes(body.code))
+      window.dispatchEvent(new Event("session-ended"));
+    throw new ApiError(body.code, res.status);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `orders_${today()}.xlsx`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}

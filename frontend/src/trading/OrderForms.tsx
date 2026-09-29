@@ -55,11 +55,13 @@ export function OrderEditor({
   onClose,
   onSaved,
   embedded = false,
+  storageKey,
 }: {
   order?: Order;
   onClose: () => void;
   onSaved: (saved: Order) => void;
   embedded?: boolean;
+  storageKey?: string;
 }) {
   const { t } = useTranslation();
   const { user } = useAuth();
@@ -184,7 +186,7 @@ export function OrderEditor({
       {content}
     </section>
   );
-  const initialValues = order
+  const defaultValues = order
     ? {
         ...order,
         ...order.numbers,
@@ -225,6 +227,22 @@ export function OrderEditor({
           },
         ],
       };
+  const initialValues = (() => {
+    if (!storageKey) return defaultValues;
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(storageKey) || "null");
+      if (!saved) return defaultValues;
+      return {
+        ...defaultValues,
+        ...saved,
+        estimated_range: saved.estimated_range?.map((value: string) =>
+          dayjs(value),
+        ),
+      };
+    } catch {
+      return defaultValues;
+    }
+  })();
   const requestClose = () => {
     if (cmd.busy) return;
     if (!form.isFieldsTouched()) {
@@ -252,6 +270,17 @@ export function OrderEditor({
         form={form}
         layout="vertical"
         initialValues={initialValues}
+        onValuesChange={(_, allValues) => {
+          if (!storageKey) return;
+          const storedValues = {
+            ...allValues,
+            estimated_range: allValues.estimated_range?.map(
+              (value: { format: (pattern: string) => string } | null) =>
+                value?.format("YYYY-MM-DD") || null,
+            ),
+          };
+          sessionStorage.setItem(storageKey, JSON.stringify(storedValues));
+        }}
         onFinish={async (values) => {
           const {
             estimated_range,
@@ -298,8 +327,8 @@ export function OrderEditor({
               payload,
               order ? "PATCH" : "POST",
             );
+            if (storageKey) sessionStorage.removeItem(storageKey);
             onSaved(saved);
-            onClose();
           } catch {
             /* ErrorBox preserves form for correction. */
           }
@@ -322,28 +351,6 @@ export function OrderEditor({
                     rules={required}
                   >
                     <Input type="date" />
-                  </Form.Item>
-                  <Form.Item
-                    name="order_state"
-                    label={t("biz.orderStatus")}
-                    rules={required}
-                  >
-                    <Select
-                      disabled={order?.state === "void"}
-                      options={(
-                        order
-                          ? Array.from(
-                              new Set([
-                                order.state,
-                                ...(user?.role === "admin" ? ["void"] : []),
-                              ]),
-                            )
-                          : ["draft", "confirmed"]
-                      ).map((value) => ({
-                        value,
-                        label: t(`biz.${value}`),
-                      }))}
-                    />
                   </Form.Item>
                   {input("customer", true)}
                   {input("supplier", true)}
@@ -564,7 +571,7 @@ export function OrderEditor({
                   />
                 </Form.Item>
                 <Form.Item name="actual_date" label={t("biz.actualSupplyDate")}>
-                  <Input type="date" max={today()} />
+                  <Input type="date" />
                 </Form.Item>
               </div>,
             )}
@@ -704,12 +711,36 @@ export function OrderEditor({
             </div>
           </aside>
         </div>
-        <Space>
-          <Button type="primary" htmlType="submit" loading={cmd.busy}>
-            {t("biz.save")}
-          </Button>
-          <span>{t("biz.saveThenPay")}</span>
-        </Space>
+        <div className="order-save-bar">
+          <Form.Item
+            name="order_state"
+            label={t("biz.orderStatus")}
+            rules={required}
+          >
+            <Select
+              disabled={order?.state === "void"}
+              options={(
+                order
+                  ? Array.from(
+                      new Set([
+                        order.state,
+                        ...(user?.role === "admin" ? ["void"] : []),
+                      ]),
+                    )
+                  : ["draft", "confirmed"]
+              ).map((value) => ({
+                value,
+                label: t(`biz.${value}`),
+              }))}
+            />
+          </Form.Item>
+          <Space>
+            <Button type="primary" htmlType="submit" loading={cmd.busy}>
+              {t("biz.save")}
+            </Button>
+            <span>{t("biz.saveThenPay")}</span>
+          </Space>
+        </div>
       </Form>
     </>
   );

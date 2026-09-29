@@ -449,6 +449,28 @@
   min-height: 24px;
   white-space: nowrap;
 }
+.order-save-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 18px;
+  margin: 22px -22px -22px;
+  padding: 14px 22px;
+  border-top: 1px solid #dce5ea;
+  background: #fffffff2;
+  box-shadow: 0 -8px 24px #1230470a;
+  backdrop-filter: blur(8px);
+}
+.order-save-bar > .ant-form-item {
+  width: 220px;
+  margin-bottom: 0;
+}
+.order-save-bar .ant-form-item-label {
+  font-weight: 700;
+}
 .ant-table-tbody > tr.order-row-void > td,
 .ant-table-tbody > tr.order-row-void:hover > td {
   background: #f0f1f2 !important;

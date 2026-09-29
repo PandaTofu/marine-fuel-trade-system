@@ -61,6 +61,7 @@ export default function Workspace() {
         <div className="sidebar-caption">MARINE OPERATIONS</div>
         <Menu
           theme="dark"
+          mode="inline"
           selectedKeys={[location.pathname]}
           items={menu}
         />
@@ -84,6 +85,9 @@ export default function Workspace() {
               onClick={async () => {
                 try {
                   await api("auth/logout/", "POST");
+                  Object.keys(sessionStorage)
+                    .filter((key) => key.startsWith("marine-order-"))
+                    .forEach((key) => sessionStorage.removeItem(key));
                   setUser(null);
                 } catch (e) {
                   setLogoutError((e as Error).message);

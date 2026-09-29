@@ -168,6 +168,44 @@ def order_export(request, pk):
     return response
 
 
+@api_view(['GET'])
+def orders_export(request):
+    rows = order_rows(request.query_params)
+    numeric = lambda value: Decimal(str(value)) if value not in (None, '') else ''
+    summary_rows = [[
+        '订单编号', '订单日期', '订单状态', '客户', '供应商', '船名', 'IMO', '港口',
+        '预计供货开始', '预计供货结束', '实际供货日期', '销售人员',
+        '销售总额（USD）', '成本总额（USD）', '佣金总额（USD）', '实际利润（USD）',
+        '剩余应收（USD）', '剩余应付（USD）', '备注',
+    ]]
+    product_rows = [[
+        '订单编号', '行号', '油品名称', '订单最小数量（MT）', '订单最大数量（MT）',
+        '实际数量（MT）', '销售单价（USD/MT）', '销售金额（USD）',
+        '供应商成本单价（USD/MT）', '供应商成本金额（USD）',
+    ]]
+    for data in rows:
+        numbers = data['numbers']
+        summary_rows.append([
+            data['number'], data['order_date'], data['state'], data['customer'], data['supplier'],
+            data['vessel'], data['imo'], data['port'], data['estimated_start_date'],
+            data['estimated_end_date'], data['actual_date'], data['salesperson'],
+            numeric(numbers['sales']), numeric(numbers['cost']), numeric(numbers['commission']),
+            numeric(numbers['profit']), numeric(numbers['receivable']), numeric(numbers['payable']),
+            data['note'],
+        ])
+        for index, line in enumerate(data['lines'], 1):
+            product_rows.append([
+                data['number'], index, line['oil'], numeric(line['ordered_qty_min']),
+                numeric(line['ordered_qty_max']), numeric(line['actual_qty']),
+                numeric(line['sale_price']), numeric(line['sale_amount']),
+                numeric(line['cost_price']), numeric(line['cost_amount']),
+            ])
+    content = workbook([('订单汇总', summary_rows), ('产品明细', product_rows)])
+    response = HttpResponse(content, content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+    response['Content-Disposition'] = f'attachment; filename="orders_{timezone.localdate().isoformat()}.xlsx"'
+    return response
+
+
 @api_view(['GET', 'PUT'])
 def order_document_content(request, pk, kind):
     if kind not in ('invoice', 'contract'):
