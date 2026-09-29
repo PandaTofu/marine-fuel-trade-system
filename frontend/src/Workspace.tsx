@@ -10,6 +10,7 @@ import {
   ShopOutlined,
   TeamOutlined,
   SettingOutlined,
+  ToolOutlined,
   SafetyOutlined,
   LogoutOutlined,
   ArrowRightOutlined,
@@ -51,7 +52,10 @@ export default function Workspace() {
       item("/app/reference/salesperson","salespersonManagement",<IdcardOutlined/>),
     ]},
     ...(user.role === "admin" ? [item("/app/users", "users", <TeamOutlined />)] : []),
-    item("/app/company", "settings", <SettingOutlined />),
+    {key:"settings-root",icon:<SettingOutlined/>,label:t("systemSettings"),children:[
+      item("/app/company", "settings", <SettingOutlined />),
+      ...(user.role === "admin" ? [item("/app/data-maintenance", "dataMaintenance", <ToolOutlined />)] : []),
+    ]},
     item("/app/security", "security", <SafetyOutlined />),
   ];
   return (

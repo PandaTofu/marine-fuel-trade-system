@@ -790,3 +790,38 @@ a:focus-visible {
   color: #8c8c8c;
   text-decoration: line-through;
 }
+.danger-zone-card {
+  max-width: 880px;
+}
+.danger-zone-card .ant-alert {
+  margin-bottom: 24px;
+}
+.maintenance-summary {
+  display: grid;
+  grid-template-columns: minmax(160px, 220px) 1fr;
+  gap: 24px;
+  align-items: center;
+  padding: 4px 0 24px;
+}
+.maintenance-backup {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 10px;
+  background: #f3f8f7;
+  color: #45636a;
+}
+.maintenance-backup > .anticon {
+  margin-top: 3px;
+  color: #147d92;
+  font-size: 20px;
+}
+.maintenance-backup p {
+  margin: 5px 0 0;
+}
+@media (max-width: 640px) {
+  .maintenance-summary {
+    grid-template-columns: 1fr;
+  }
+}

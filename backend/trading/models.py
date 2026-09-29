@@ -171,3 +171,16 @@ class DocumentEmail(models.Model):
 
     class Meta:
         ordering = ['-created_at', '-id']
+
+
+class OrderPurgeBackup(models.Model):
+    """Administrator-created snapshot retained after test orders are purged."""
+
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    order_count = models.PositiveIntegerField()
+    reason = models.CharField(max_length=1000)
+    snapshot = models.JSONField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at', '-id']

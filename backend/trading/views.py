@@ -8,9 +8,9 @@ from django.utils import timezone
 from core.models import Audit, Company, Reference
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
-from .models import Account, Order, Entry, OrderDocument, DocumentEmail
+from .models import Account, Order, Entry, OrderDocument, DocumentEmail, OrderPurgeBackup
 from .serializers import OrderSerializer, EntrySerializer, SettlementSerializer, EntryInput, RefundInput, ReasonInput, DocumentContentInput, DocumentEmailInput
-from .services import command, save_order, save_account, delete_account, account_data, account_balance, locked_order, settle, refund, manual_entry, reverse_entry, close_order, require_admin, BusinessError
+from .services import command, save_order, save_account, delete_account, account_data, account_balance, locked_order, settle, refund, manual_entry, reverse_entry, close_order, purge_all_orders, require_admin, BusinessError
 from .calculations import FINANCIAL_ORDER_STATES, EXCLUDED_ORDER_STATES, text, ZERO
 from .exports import workbook
 from .documents import invoice_pdf, contract_pdf, document_defaults
@@ -431,6 +431,32 @@ def clear_snapshot(request):
     require_admin(request.user)
     rows=list(Order.objects.filter(state__in=[*FINANCIAL_ORDER_STATES, 'draft']).values('id','version'))
     return Response(rows)
+
+
+@api_view(['GET', 'POST'])
+def order_data_maintenance(request):
+    require_admin(request.user)
+    if request.method == 'POST':
+        return Response(command(
+            request,
+            'order.purge_all',
+            lambda: purge_all_orders(
+                request.user,
+                request.data.get('confirmation'),
+                request.data.get('reason'),
+            ),
+        ))
+    latest = OrderPurgeBackup.objects.select_related('actor').first()
+    return Response({
+        'order_count': Order.objects.count(),
+        'latest_backup': None if latest is None else {
+            'id': latest.pk,
+            'order_count': latest.order_count,
+            'reason': latest.reason,
+            'created_at': latest.created_at.isoformat(),
+            'actor': latest.actor.username,
+        },
+    })
 
 
 @api_view(['GET','POST'])

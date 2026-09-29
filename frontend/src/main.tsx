@@ -19,6 +19,7 @@ const Funds = React.lazy(() => import("./trading/Funds"));
 const References = React.lazy(() => import("./References"));
 const Users = React.lazy(() => import("./Users"));
 const Company = React.lazy(() => import("./Company"));
+const DataMaintenance = React.lazy(() => import("./DataMaintenance"));
 import { PasswordForm } from "./components";
 function Root() {
   const { i18n } = useTranslation();
@@ -56,6 +57,7 @@ function Root() {
                   <Route path="reference/:kind" element={<References />} />
                   <Route path="users" element={<Users />} />
                   <Route path="company" element={<Company />} />
+                  <Route path="data-maintenance" element={<DataMaintenance />} />
                   <Route path="security" element={<PasswordForm />} />
                 </Route>
                 <Route path="*" element={<Navigate to="/" replace />} />

@@ -17,9 +17,9 @@ from django.db import close_old_connections
 from django.test import TestCase, SimpleTestCase, TransactionTestCase, override_settings, skipUnlessDBFeature
 from django.utils import timezone
 from rest_framework.test import APIClient
-from core.models import Reference, User
+from core.models import Audit, Reference, User
 from .calculations import state, totals, order_numbers
-from .models import Account, DocumentEmail, Entry, Mutation, Order, OrderDocument, OrderRevision, WriteLock
+from .models import Account, DocumentEmail, Entry, Mutation, Order, OrderDocument, OrderPurgeBackup, OrderRevision, WriteLock
 from .services import account_balance
 from .documents import PURCHASE_TERMS, SALES_TERMS
 
@@ -541,6 +541,44 @@ class TradingTests(TestCase):
         self.assertEqual(Order.objects.get(pk=third['id']).state,'deleted')
         self.assertEqual(self.client.get(f"/api/trading/orders/{third['id']}/").status_code,404)
         self.assertTrue(OrderRevision.objects.filter(order_id=third['id'],action='deleted').exists())
+
+    def test_admin_can_backup_and_purge_all_order_data(self):
+        self.settle(self.create_order(), customer_received='25')
+        self.create_order()
+        self.assertEqual(
+            self.client.get('/api/trading/orders/data-maintenance/').json()['order_count'],
+            2,
+        )
+        denied = APIClient()
+        denied.force_authenticate(self.operator)
+        self.assertEqual(
+            denied.get('/api/trading/orders/data-maintenance/').status_code,
+            403,
+        )
+        invalid = self.write(
+            'orders/data-maintenance/',
+            {'confirmation': 'DELETE', 'reason': 'Reset test data'},
+        )
+        self.assertEqual(invalid.json()['code'], 'purge_confirmation_invalid')
+        response = self.write(
+            'orders/data-maintenance/',
+            {
+                'confirmation': 'DELETE ALL ORDERS',
+                'reason': 'Reset test data before acceptance testing',
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.json()['count'], 2)
+        self.assertFalse(Order.objects.exists())
+        self.assertFalse(Entry.objects.exists())
+        self.assertFalse(OrderDocument.objects.exists())
+        self.assertFalse(OrderRevision.objects.exists())
+        self.assertTrue(Account.objects.filter(pk=self.account.pk).exists())
+        backup = OrderPurgeBackup.objects.get(pk=response.json()['backup_id'])
+        self.assertEqual(backup.order_count, 2)
+        self.assertEqual(len(backup.snapshot['orders']), 2)
+        self.assertTrue(backup.snapshot['entries'])
+        self.assertTrue(Audit.objects.filter(action='all_orders_purged').exists())
 
     def test_account_default_opening_delete_and_permissions(self):
         response=self.write('accounts/',{'name':'New default','opening_balance':'100.00','is_default':True})

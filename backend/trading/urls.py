@@ -6,6 +6,7 @@ urlpatterns = [
     path('orders/options/',views.options),
     path('orders/export/',views.orders_export),
     path('orders/clear-snapshot/',views.clear_snapshot),
+    path('orders/data-maintenance/',views.order_data_maintenance),
     path('orders/bulk-delete/',views.bulk_delete),
     path('orders/<int:pk>/',views.order_detail),
     path('orders/<int:pk>/invoice/',views.order_document,{'kind':'invoice'}),

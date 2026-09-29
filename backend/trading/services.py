@@ -2,12 +2,13 @@ import hashlib
 import json
 import uuid
 from decimal import Decimal
+from django.core import serializers as django_serializers
 from django.db import transaction
 from django.db.models import F
 from django.utils import timezone
 from rest_framework.exceptions import APIException
 from core.models import Audit
-from .models import Account, Order, OrderLine, Entry, OrderRevision, OrderDocument, Mutation, WriteLock
+from .models import Account, Order, OrderLine, Entry, OrderRevision, OrderDocument, DocumentEmail, OrderPurgeBackup, Mutation, WriteLock
 from .calculations import COMPONENTS, FINANCIAL_ORDER_STATES, EXCLUDED_ORDER_STATES, ZERO, money, text, totals, settlement_totals, order_numbers
 from .documents import document_defaults
 from .serializers import OrderSerializer, AccountSerializer
@@ -419,3 +420,54 @@ def close_order(order, actor, version, reason, void=False, date=None):
     order.save(update_fields=['state'])
     revision(order, actor, 'void' if void else 'deleted', reason)
     return {'ok': True}
+
+
+def purge_all_orders(actor, confirmation, reason):
+    require_admin(actor)
+    if confirmation != 'DELETE ALL ORDERS':
+        raise BusinessError('purge_confirmation_invalid')
+    reason = str(reason or '').strip()
+    if not reason or len(reason) > 1000:
+        raise BusinessError('reason_required')
+
+    order_ids = list(
+        Order.objects.select_for_update().order_by('id').values_list('id', flat=True)
+    )
+    if not order_ids:
+        raise BusinessError('no_orders_to_delete')
+
+    def serialized(queryset):
+        return json.loads(django_serializers.serialize('json', queryset))
+
+    documents = OrderDocument.objects.filter(order_id__in=order_ids).order_by('id')
+    document_ids = list(documents.values_list('id', flat=True))
+    snapshot = {
+        'orders': serialized(Order.objects.filter(id__in=order_ids).order_by('id')),
+        'lines': serialized(OrderLine.objects.filter(order_id__in=order_ids).order_by('id')),
+        'entries': serialized(Entry.objects.filter(order_id__in=order_ids).order_by('id')),
+        'revisions': serialized(OrderRevision.objects.filter(order_id__in=order_ids).order_by('id')),
+        'documents': serialized(documents),
+        'document_emails': serialized(DocumentEmail.objects.filter(document_id__in=document_ids).order_by('id')),
+    }
+    backup = OrderPurgeBackup.objects.create(
+        actor=actor,
+        order_count=len(order_ids),
+        reason=reason,
+        snapshot=snapshot,
+    )
+
+    DocumentEmail.objects.filter(document_id__in=document_ids).delete()
+    documents.delete()
+    OrderRevision.objects.filter(order_id__in=order_ids).delete()
+    # The recovery snapshot already preserves reversal links. Detach the
+    # self-protecting relation so the complete order ledger can be deleted.
+    Entry.objects.filter(order_id__in=order_ids).update(reversal_of=None)
+    Entry.objects.filter(order_id__in=order_ids).delete()
+    OrderLine.objects.filter(order_id__in=order_ids).delete()
+    Order.objects.filter(id__in=order_ids).delete()
+    Audit.objects.create(
+        actor=actor,
+        action='all_orders_purged',
+        target=f'backup:{backup.pk};count:{len(order_ids)}',
+    )
+    return {'ok': True, 'count': len(order_ids), 'backup_id': backup.pk}
