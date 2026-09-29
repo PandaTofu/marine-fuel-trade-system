@@ -196,24 +196,32 @@ export default function Orders({
           ) : (
             <Space size={6}>
               <Tooltip title={t("biz.exportContract")}>
-                <Button
-                  size="small"
-                  aria-label={t("biz.exportContract")}
-                  icon={<FilePdfOutlined />}
-                  onClick={() =>
-                    setDocument({ orderId: o.id, kind: "contract" })
-                  }
-                />
+                <span>
+                  <Button
+                    className="order-action-button contract"
+                    size="small"
+                    disabled={o.state === "void"}
+                    aria-label={t("biz.exportContract")}
+                    icon={<FilePdfOutlined />}
+                    onClick={() =>
+                      setDocument({ orderId: o.id, kind: "contract" })
+                    }
+                  />
+                </span>
               </Tooltip>
               <Tooltip title={t("biz.issueInvoice")}>
-                <Button
-                  size="small"
-                  aria-label={t("biz.issueInvoice")}
-                  icon={<FileDoneOutlined />}
-                  onClick={() =>
-                    setDocument({ orderId: o.id, kind: "invoice" })
-                  }
-                />
+                <span>
+                  <Button
+                    className="order-action-button invoice"
+                    size="small"
+                    disabled={o.state === "void"}
+                    aria-label={t("biz.issueInvoice")}
+                    icon={<FileDoneOutlined />}
+                    onClick={() =>
+                      setDocument({ orderId: o.id, kind: "invoice" })
+                    }
+                  />
+                </span>
               </Tooltip>
             </Space>
           )}
@@ -436,6 +444,7 @@ export default function Orders({
       </div>
       <ErrorBox error={r.error || exportError} retry={r.refresh} />
       <Table<Order>
+        className="orders-table"
         rowKey="id"
         loading={r.loading}
         dataSource={r.data?.results}

@@ -449,6 +449,30 @@
   min-height: 24px;
   white-space: nowrap;
 }
+.orders-table .ant-table-thead > tr > th {
+  background: #e9f4fb;
+  color: #244b63;
+  font-weight: 700;
+}
+.orders-table .ant-table-thead > tr > th::before {
+  background-color: #cbdde8 !important;
+}
+.order-action-button.contract:not(:disabled) {
+  border-color: #a9ccef;
+  background: #edf6ff;
+  color: #2472b8;
+}
+.order-action-button.invoice:not(:disabled) {
+  border-color: #a9ddc0;
+  background: #edf9f2;
+  color: #278653;
+}
+.order-action-button:not(:disabled):hover {
+  filter: brightness(0.97);
+}
+.order-action-button:disabled {
+  opacity: 0.45;
+}
 .order-save-bar {
   position: sticky;
   bottom: 0;
