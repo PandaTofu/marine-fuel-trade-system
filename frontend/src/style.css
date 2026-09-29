@@ -435,6 +435,10 @@ a:focus-visible {
 .sidebar .ant-menu {
   background: transparent;
 }
+.sidebar .ant-menu-dark .ant-menu-sub,
+.sidebar .ant-menu-dark.ant-menu-inline .ant-menu-sub.ant-menu-inline {
+  background: transparent;
+}
 .sidebar .ant-menu-item {
   height: 48px;
   margin-bottom: 7px;
