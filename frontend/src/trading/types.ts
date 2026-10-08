@@ -70,6 +70,14 @@ export interface Order {
   lines: Line[];
   numbers: Numbers;
 }
+export type OrderAttachmentKind = "supplier_invoice" | "bdn";
+export interface OrderAttachment {
+  kind: OrderAttachmentKind;
+  original_name: string;
+  uploaded_by: string;
+  uploaded_at: string;
+  size: number;
+}
 export interface Account {
   id: number;
   name: string;

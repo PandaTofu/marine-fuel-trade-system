@@ -44,3 +44,5 @@ EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'true').lower() == 'true'
 EMAIL_USE_SSL = os.getenv('EMAIL_USE_SSL', 'false').lower() == 'true'
 EMAIL_TIMEOUT = int(os.getenv('EMAIL_TIMEOUT', '20'))
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', EMAIL_HOST_USER)
+MEDIA_ROOT = Path(os.getenv('MEDIA_ROOT', BASE_DIR.parent / 'data' / 'uploads'))
+MEDIA_URL = '/media/'

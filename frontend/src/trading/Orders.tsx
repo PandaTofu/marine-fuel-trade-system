@@ -108,7 +108,51 @@ export default function Orders({
   const refresh = () => {
     r.refresh();
   };
-  const columns: ColumnsType<Order> = [
+  const actionColumn: ColumnsType<Order>[number] = {
+    title: t("biz.action"),
+    width: settlements ? 230 : 110,
+    render: (_: unknown, o: Order) => (
+      <div className="order-row-actions">
+        {settlements ? (
+          ["confirmed", "supplied", "completed"].includes(o.state) && (
+            <Space size={6}>
+              <Button size="small" type="primary" disabled={!['admin', 'finance'].includes(user?.role || '')} onClick={() => setPayment({ order: o, refund: false })}>
+                {t("biz.recordPayment")}
+              </Button>
+              <Button size="small" disabled={!['admin', 'finance'].includes(user?.role || '')} onClick={() => setPayment({ order: o, refund: true })}>
+                {t("biz.refundAction")}
+              </Button>
+            </Space>
+          )
+        ) : (
+          <Space size={6}>
+            <Tooltip title={t("biz.exportContract")}>
+              <span>
+                <Dropdown
+                  disabled={o.state === "void"}
+                  menu={{
+                    items: [
+                      { key: "sales_contract", label: t("biz.salesContract") },
+                      { key: "purchase_contract", label: t("biz.purchaseContract") },
+                    ],
+                    onClick: ({ key }) => setDocument({ orderId: o.id, kind: key as DocumentKind }),
+                  }}
+                >
+                  <Button className="order-action-button contract" size="small" disabled={o.state === "void"} aria-label={t("biz.exportContract")} icon={<FilePdfOutlined />} />
+                </Dropdown>
+              </span>
+            </Tooltip>
+            <Tooltip title={t("biz.issueInvoice")}>
+              <span>
+                <Button className="order-action-button invoice" size="small" disabled={o.state === "void"} aria-label={t("biz.issueInvoice")} icon={<FileDoneOutlined />} onClick={() => setDocument({ orderId: o.id, kind: "invoice" })} />
+              </span>
+            </Tooltip>
+          </Space>
+        )}
+      </div>
+    ),
+  };
+  const sharedColumns: ColumnsType<Order> = [
     {
       title: t("biz.number"),
       dataIndex: "number",
@@ -120,27 +164,21 @@ export default function Orders({
           : ordering === "-id"
             ? "descend"
             : null,
-      width: 195,
+      width: 175,
       render: (v: string, o: Order) => (
-        <Space direction="vertical" size={2}>
-          <Button
-            type="link"
-            onClick={() => {
-              setDetail(o);
-              if (!settlements) setActiveTab("order-detail");
-            }}
-          >
-            {v}
-          </Button>
-          <Status value={o.state} />
-        </Space>
+        <Button className="order-number-link" type="link" onClick={() => {
+          setDetail(o);
+          if (!settlements) setActiveTab("order-detail");
+        }}>
+          {v}
+        </Button>
       ),
     },
     {
       title: t("biz.order_date"),
       dataIndex: "order_date",
       key: "order_date",
-      width: 145,
+      width: 125,
       sorter: true,
       sortOrder:
         ordering === "order_date"
@@ -149,121 +187,80 @@ export default function Orders({
             ? "descend"
             : null,
     },
-    ...["vessel", "customer", "supplier", "port"].map((key) => ({
-      title: t(`biz.${key}`),
-      dataIndex: key,
-      width: 145,
-    })),
+  ];
+  const columns: ColumnsType<Order> = settlements
+    ? [
+        ...sharedColumns,
+        ...["vessel", "customer", "supplier", "port"].map((key) => ({ title: t(`biz.${key}`), dataIndex: key, width: 145 })),
+        {
+          title: t("biz.oil"),
+          width: 150,
+          render: (_: unknown, o: Order) => o.lines.map((line) => line.oil).join(" / "),
+        },
+        ...["customer_deposit", "customer_received", "supplier_deposit", "supplier_paid", "receivable", "payable"].map((key) => ({
+          title: t(`biz.${key}`),
+          width: 160,
+          render: (_: unknown, o: Order) => cash(o.numbers[key as keyof Order["numbers"]]),
+        })),
+        ...["customer_due", "supplier_due"].map((key) => ({
+          title: t(`biz.${key}`),
+          width: 130,
+          render: (_: unknown, o: Order) => o.numbers[key as "customer_due" | "supplier_due"] || "—",
+        })),
+        ...["customer_status", "supplier_status"].map((key) => ({
+          title: t(`biz.${key}`),
+          width: 130,
+          render: (_: unknown, o: Order) => <Status value={o.numbers[key as "customer_status" | "supplier_status"]} />,
+        })),
+        actionColumn,
+      ]
+    : [
+        ...sharedColumns,
+        {
+          title: t("biz.vesselCustomer"),
+          width: 220,
+          render: (_: unknown, o: Order) => (
+            <div className="order-primary-secondary">
+              <strong>{o.vessel}</strong>
+              <span>{o.customer}</span>
+            </div>
+          ),
+        },
+        ...(user?.role === "admin" ? [{ title: t("biz.salesperson"), dataIndex: "salesperson", width: 120, render: (value: string) => value || "—" }] : []),
     {
       title: t("biz.oil"),
-      width: 150,
-      render: (_: unknown, o: Order) => o.lines.map((l) => l.oil).join(" / "),
+          width: 180,
+          render: (_: unknown, o: Order) => o.lines.map((line) => line.oil).join(", "),
     },
-    ...(!settlements
-      ? ["sales", "cost", ...(user?.role === "admin" ? ["commission", "profit"] : [])]
-      : [
-          "customer_deposit",
-          "customer_received",
-          "supplier_deposit",
-          "supplier_paid",
-        ]
-    ).map((key) => ({
+        ...["sales", "cost", ...(user?.role === "admin" ? ["profit"] : [])].map((key) => ({
       title: t(`biz.${key}`),
-      width: 160,
-      render: (_: unknown, o: Order) =>
-        cash(o.numbers[key as keyof Order["numbers"]]),
+          width: 125,
+          className: key === "profit" ? "order-profit-column" : undefined,
+          render: (_: unknown, o: Order) => <strong>{cash(o.numbers[key as keyof Order["numbers"]])}</strong>,
     })),
-    ...["receivable", "payable"].map((key) => ({
-      title: t(`biz.${key}`),
-      width: 160,
-      render: (_: unknown, o: Order) =>
-        cash(o.numbers[key as "receivable" | "payable"]),
-    })),
-    ...["customer_due", "supplier_due"].map((key) => ({
-      title: t(`biz.${key}`),
-      width: 130,
-      render: (_: unknown, o: Order) =>
-        o.numbers[key as "customer_due" | "supplier_due"] || "—",
-    })),
-    ...["customer_status", "supplier_status"].map((key) => ({
-      title: t(`biz.${key}`),
-      width: 130,
-      render: (_: unknown, o: Order) => (
-        <Status
-          value={o.numbers[key as "customer_status" | "supplier_status"]}
-        />
-      ),
-    })),
-    {
-      title: t("biz.action"),
-      width: settlements ? 230 : 110,
-      render: (_: unknown, o: Order) => (
-        <div className="order-row-actions">
-          {settlements ? (
-            ["confirmed", "supplied", "completed"].includes(o.state) && (
-              <Space size={6}>
-                <Button
-                  size="small"
-                  type="primary"
-                  disabled={!['admin', 'finance'].includes(user?.role || '')}
-                  onClick={() => setPayment({ order: o, refund: false })}
-                >
-                  {t("biz.recordPayment")}
-                </Button>
-                <Button
-                  size="small"
-                  disabled={!['admin', 'finance'].includes(user?.role || '')}
-                  onClick={() => setPayment({ order: o, refund: true })}
-                >
-                  {t("biz.refundAction")}
-                </Button>
-              </Space>
-            )
-          ) : (
-            <Space size={6}>
-              <Tooltip title={t("biz.exportContract")}>
-                <span>
-                  <Dropdown
-                    disabled={o.state === "void"}
-                    menu={{
-                      items: [
-                        { key: "sales_contract", label: t("biz.salesContract") },
-                        { key: "purchase_contract", label: t("biz.purchaseContract") },
-                      ],
-                      onClick: ({ key }) =>
-                        setDocument({ orderId: o.id, kind: key as DocumentKind }),
-                    }}
-                  >
-                    <Button
-                      className="order-action-button contract"
-                      size="small"
-                      disabled={o.state === "void"}
-                      aria-label={t("biz.exportContract")}
-                      icon={<FilePdfOutlined />}
-                    />
-                  </Dropdown>
-                </span>
-              </Tooltip>
-              <Tooltip title={t("biz.issueInvoice")}>
-                <span>
-                  <Button
-                    className="order-action-button invoice"
-                    size="small"
-                    disabled={o.state === "void"}
-                    aria-label={t("biz.issueInvoice")}
-                    icon={<FileDoneOutlined />}
-                    onClick={() =>
-                      setDocument({ orderId: o.id, kind: "invoice" })
-                    }
-                  />
-                </span>
-              </Tooltip>
-            </Space>
-          )}
-        </div>
-      ),
-    },
-  ];
+        {
+          title: t("biz.receivablePayable"),
+          width: 145,
+          render: (_: unknown, o: Order) => (
+            <div className="order-stacked-values">
+              <strong>{cash(o.numbers.receivable)}</strong>
+              <span>{cash(o.numbers.payable)}</span>
+            </div>
+          ),
+        },
+        { title: t("biz.businessStatus"), width: 110, render: (_: unknown, o: Order) => <Status value={o.state} /> },
+        {
+          title: t("biz.receiptPaymentStatus"),
+          width: 145,
+          render: (_: unknown, o: Order) => (
+            <div className="order-settlement-statuses">
+              <span>{t("biz.receiptShort")}: <Status value={o.numbers.customer_status} /></span>
+              <span>{t("biz.paymentShort")}: <Status value={o.numbers.supplier_status} /></span>
+            </div>
+          ),
+        },
+        actionColumn,
+      ];
   const openNewOrder = () => {
     setNewOrderOpen(true);
     setActiveTab("new-order");
@@ -384,14 +381,7 @@ export default function Orders({
               name="q"
               label={t("biz.query")}
             >
-              <Input allowClear />
-            </Form.Item>
-            <Form.Item
-              className="order-filter-supplier"
-              name="supplier"
-              label={t("biz.supplier")}
-            >
-              <Input allowClear />
+              <Input allowClear placeholder={t("biz.orderSearchPlaceholder")} />
             </Form.Item>
             {["date_from", "date_to"].map((key) => (
               <Form.Item
@@ -403,6 +393,15 @@ export default function Orders({
                 <Input type="date" />
               </Form.Item>
             ))}
+            {user?.role === "admin" && (
+              <Form.Item
+                className="order-filter-salesperson"
+                name="salesperson"
+                label={t("biz.salesperson")}
+              >
+                <Input allowClear />
+              </Form.Item>
+            )}
             <Form.Item
               className="order-filter-state"
               name="state"
@@ -455,7 +454,7 @@ export default function Orders({
             </Form.Item>
           </div>
           <div className="order-filter-advanced" hidden={!advancedFiltersOpen}>
-            {["customer", "port", "oil", ...(user?.role === "admin" ? ["salesperson"] : [])].map(
+            {["customer", "supplier", "port", "oil"].map(
               (key) => (
                 <Form.Item key={key} name={key} label={t(`biz.${key}`)}>
                   <Input allowClear />
@@ -517,7 +516,7 @@ export default function Orders({
         loading={r.loading}
         dataSource={r.data?.results}
         columns={columns}
-        scroll={{ x: 2600 }}
+        scroll={{ x: settlements ? 2600 : 1600 }}
         rowClassName={(row) => row.state === "void" ? "order-row-void" : ""}
         onChange={(_pagination, _tableFilters, sorter) => {
           const activeSorter = Array.isArray(sorter) ? sorter[0] : sorter;

@@ -3,6 +3,7 @@
 Use Django's isolated test database. Never point these cases at a live database.
 """
 import copy
+import tempfile
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
@@ -15,11 +16,12 @@ from zipfile import ZipFile
 from xml.etree import ElementTree
 from django.db import close_old_connections
 from django.test import TestCase, SimpleTestCase, TransactionTestCase, override_settings, skipUnlessDBFeature
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
 from rest_framework.test import APIClient
 from core.models import Audit, Reference, User
 from .calculations import state, totals, order_numbers
-from .models import Account, DocumentEmail, Entry, Mutation, Order, OrderDocument, OrderPurgeBackup, OrderRevision, WriteLock
+from .models import Account, DocumentEmail, Entry, Mutation, Order, OrderAttachment, OrderDocument, OrderPurgeBackup, OrderRevision, WriteLock
 from .services import account_balance
 from .documents import PURCHASE_TERMS, SALES_TERMS
 
@@ -94,6 +96,33 @@ class TradingTests(TestCase):
         self.assertEqual(len(SALES_TERMS),5)
         self.assertTrue(all(term.strip() for term in SALES_TERMS))
         self.assertEqual(len(PURCHASE_TERMS),4)
+
+    def test_order_attachment_upload_replaces_same_kind_and_rejects_non_pdf(self):
+        order = self.create_order()
+        with tempfile.TemporaryDirectory() as media_root, override_settings(MEDIA_ROOT=media_root):
+            path = f"/api/trading/orders/{order['id']}/attachments/"
+            first = SimpleUploadedFile('supplier-one.pdf', b'%PDF-1.4 first', content_type='application/pdf')
+            response = self.client.post(path, {'kind': 'supplier_invoice', 'file': first}, format='multipart')
+            self.assertEqual(response.status_code, 201, response.data)
+            self.assertEqual(OrderAttachment.objects.filter(order_id=order['id']).count(), 1)
+
+            replacement = SimpleUploadedFile('supplier-two.pdf', b'%PDF-1.4 replacement', content_type='application/pdf')
+            response = self.client.post(path, {'kind': 'supplier_invoice', 'file': replacement}, format='multipart')
+            self.assertEqual(response.status_code, 201, response.data)
+            self.assertEqual(OrderAttachment.objects.filter(order_id=order['id']).count(), 1)
+            self.assertEqual(response.json()['original_name'], 'supplier-two.pdf')
+
+            invalid = SimpleUploadedFile('fake.pdf', b'not a pdf', content_type='application/pdf')
+            response = self.client.post(path, {'kind': 'bdn', 'file': invalid}, format='multipart')
+            self.assertEqual(response.status_code, 400)
+            self.assertEqual(response.json()['code'], 'pdf_only')
+
+            download = self.client.get(f"{path}supplier_invoice/")
+            self.assertEqual(download.status_code, 200)
+            self.assertEqual(download['Content-Type'], 'application/pdf')
+            deleted = self.client.delete(f"{path}supplier_invoice/")
+            self.assertEqual(deleted.status_code, 204)
+            self.assertFalse(OrderAttachment.objects.filter(order_id=order['id']).exists())
 
     def test_document_edits_are_saved_separately_from_order(self):
         order = self.create_order()
@@ -682,6 +711,8 @@ class TradingTests(TestCase):
         self.assertEqual(response.json()['count'],1)
         self.assertEqual(response.json()['summary']['sales'],'910000.00')
         self.assertEqual(response.json()['summary']['partial_receipts'],1)
+        self.assertEqual(self.client.get('/api/trading/orders/', {'q': order['number']}).json()['count'], 1)
+        self.assertEqual(self.client.get('/api/trading/orders/', {'q': 'MGO'}).json()['count'], 2)
         self.assertEqual(self.client.get('/api/trading/orders/',{'state':'confirmed'}).json()['results'][0]['id'],pending['id'])
         self.assertEqual(self.client.get('/api/trading/ledger/',{'direction':'income','account':self.account.pk}).json()['net'],'100.00')
         self.assertEqual(self.write('ledger/',{'category':'other_income','direction':'income','amount':'5.50','reason':'=HYPERLINK("malicious")'}).status_code,201)

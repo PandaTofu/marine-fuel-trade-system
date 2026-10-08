@@ -55,7 +55,8 @@
   flex: 1 1 230px;
   min-width: 210px;
 }
-.order-filter-supplier {
+.order-filter-supplier,
+.order-filter-salesperson {
   flex: 0 1 190px;
   min-width: 150px;
 }
@@ -162,11 +163,129 @@
 .order-detail-page-header .order-modal-title {
   padding-right: 0;
 }
+.order-detail-hero {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 22px;
+  margin-bottom: 18px;
+  padding: 22px 24px;
+  border: 1px solid #dbe8f3;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #f3f8fd, #fff);
+}
+.order-detail-hero > div:first-child > span,
+.order-detail-fields span,
+.order-detail-metrics span {
+  color: #778b9c;
+  font-size: 13px;
+}
+.order-detail-hero h2 {
+  margin: 5px 0 10px;
+  color: #092f61;
+  font-size: 23px;
+}
+.order-detail-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(125px, 1fr));
+  min-width: min(58%, 700px);
+  gap: 10px;
+}
+.order-detail-metrics > div {
+  padding: 10px 13px;
+  border-left: 3px solid #9ec6eb;
+  border-radius: 6px;
+  background: #fff;
+}
+.order-detail-metrics strong {
+  display: block;
+  margin-top: 4px;
+  color: #0b376b;
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+}
+.order-detail-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.order-detail-group {
+  overflow: hidden;
+  border: 1px solid #e1e9ee;
+  border-radius: 10px;
+  background: #fff;
+}
+.order-detail-group h3 {
+  margin: 0;
+  padding: 13px 17px;
+  border-bottom: 1px solid #e8eef2;
+  background: #f4f8fb;
+  color: #18364f;
+  font-size: 15px;
+}
+.order-detail-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0;
+  padding: 8px 17px;
+}
+.order-detail-fields > div {
+  min-width: 0;
+  padding: 9px 10px 9px 0;
+}
+.order-detail-fields strong {
+  display: block;
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+  color: #243746;
+}
+.order-detail-lines {
+  margin-bottom: 16px;
+}
+.order-detail-lines .ant-table-wrapper {
+  padding: 14px 16px 16px;
+}
+.order-attachments-panel {
+  overflow: hidden;
+  border: 1px solid #e1e9ee;
+  border-radius: 10px;
+  background: #fff;
+}
+.order-attachments-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 17px 20px;
+  border-bottom: 1px solid #e8eef2;
+}
+.order-attachments-heading h3,
+.order-attachments-heading p {
+  margin: 0;
+}
+.order-attachments-heading p {
+  margin-top: 4px;
+  color: #778b9c;
+  font-size: 13px;
+}
+.order-attachments-panel > .ant-table-wrapper {
+  padding: 14px 20px 20px;
+}
 .order-documents-panel {
   overflow: hidden;
   border: 1px solid #e1e9ee;
   border-radius: 10px;
   background: #fff;
+}
+@media (max-width: 1000px) {
+  .order-detail-hero { flex-direction: column; }
+  .order-detail-metrics { min-width: 0; }
+}
+@media (max-width: 720px) {
+  .order-detail-groups,
+  .order-detail-metrics { grid-template-columns: 1fr; }
+  .order-attachments-heading { align-items: flex-start; flex-direction: column; }
 }
 .order-document-row {
   display: flex;
@@ -489,6 +608,43 @@
   min-height: 24px;
   white-space: nowrap;
 }
+.order-number-link {
+  height: auto;
+  padding: 0;
+  font-weight: 750;
+}
+.order-primary-secondary,
+.order-stacked-values,
+.order-settlement-statuses {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.order-primary-secondary strong,
+.order-stacked-values strong {
+  color: #183f6d;
+  font-weight: 750;
+}
+.order-primary-secondary span,
+.order-stacked-values span {
+  color: #718ba3;
+  font-size: 12px;
+}
+.order-profit-column,
+.order-profit-column strong {
+  color: #0067c5;
+  font-weight: 800;
+}
+.order-settlement-statuses > span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.order-settlement-statuses .ant-tag {
+  margin-inline-end: 0;
+}
 .orders-table .ant-table-thead > tr > th {
   background: #e9f4fb;
   color: #244b63;
@@ -639,6 +795,7 @@
   }
   .order-filter-search,
   .order-filter-supplier,
+  .order-filter-salesperson,
   .order-filter-date,
   .order-filter-state,
   .order-filter-advanced > .ant-form-item {

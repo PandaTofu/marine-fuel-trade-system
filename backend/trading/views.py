@@ -2,13 +2,13 @@ from datetime import date, timedelta
 from decimal import Decimal
 from django.conf import settings
 from django.core.mail import EmailMessage
-from django.http import HttpResponse
+from django.http import FileResponse, HttpResponse
 from django.db.models import Q
 from django.utils import timezone
 from core.models import Audit, Company, Reference
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
-from .models import Account, Order, Entry, OrderDocument, DocumentEmail, OrderPurgeBackup
+from .models import Account, Order, Entry, OrderAttachment, OrderDocument, DocumentEmail, OrderPurgeBackup
 from .serializers import OrderSerializer, EntrySerializer, SettlementSerializer, EntryInput, RefundInput, ReasonInput, DocumentContentInput, DocumentEmailInput
 from .services import command, save_order, save_account, delete_account, account_data, account_balance, locked_order, settle, refund, manual_entry, reverse_entry, close_order, purge_all_orders, require_admin, BusinessError
 from .calculations import FINANCIAL_ORDER_STATES, EXCLUDED_ORDER_STATES, text, ZERO
@@ -54,7 +54,15 @@ def order_rows(params, actor=None):
         qs = qs.filter(lines__oil__icontains=params['oil']).distinct()
     if params.get('q'):
         q = params['q']
-        qs = qs.filter(Q(vessel__icontains=q) | Q(customer__icontains=q) | Q(supplier__icontains=q))
+        qs = qs.filter(
+            Q(number__icontains=q) |
+            Q(vessel__icontains=q) |
+            Q(customer__icontains=q) |
+            Q(supplier__icontains=q) |
+            Q(imo__icontains=q) |
+            Q(port__icontains=q) |
+            Q(lines__oil__icontains=q)
+        ).distinct()
     if params.get('state'):
         if params['state'] == 'financial':
             qs = qs.filter(state__in=FINANCIAL_ORDER_STATES)
@@ -110,6 +118,71 @@ def order_detail(request, pk):
     except Order.DoesNotExist:
         raise BusinessError('not_found',404)
     return Response(OrderSerializer(row, context={'actor': request.user}).data)
+
+
+def attachment_data(row):
+    return {
+        'kind': row.kind,
+        'original_name': row.original_name,
+        'uploaded_by': row.uploaded_by.get_full_name() or row.uploaded_by.username,
+        'uploaded_at': row.uploaded_at,
+        'size': row.file.size,
+    }
+
+
+@api_view(['GET', 'POST'])
+def order_attachments(request, pk):
+    try:
+        order = Order.objects.exclude(state='deleted').get(pk=pk)
+    except Order.DoesNotExist:
+        raise BusinessError('not_found', 404)
+    if request.method == 'GET':
+        return Response([attachment_data(row) for row in order.attachments.select_related('uploaded_by')])
+    kind = request.data.get('kind')
+    uploaded = request.FILES.get('file')
+    if kind not in dict(OrderAttachment.KINDS) or not uploaded:
+        raise BusinessError('invalid')
+    if uploaded.size > 20 * 1024 * 1024:
+        raise BusinessError('file_too_large')
+    header = uploaded.read(5)
+    uploaded.seek(0)
+    if uploaded.content_type != 'application/pdf' or header != b'%PDF-':
+        raise BusinessError('pdf_only')
+    existing = OrderAttachment.objects.filter(order=order, kind=kind).first()
+    if existing:
+        existing.file.delete(save=False)
+        existing.file = uploaded
+        existing.original_name = uploaded.name[:255]
+        existing.uploaded_by = request.user
+        existing.save()
+        row = existing
+    else:
+        row = OrderAttachment.objects.create(
+            order=order,
+            kind=kind,
+            file=uploaded,
+            original_name=uploaded.name[:255],
+            uploaded_by=request.user,
+        )
+    Audit.objects.create(actor=request.user, action='order.attachment.upload', target=f'{order.number}:{kind}')
+    return Response(attachment_data(row), status=201)
+
+
+@api_view(['GET', 'DELETE'])
+def order_attachment(request, pk, kind):
+    try:
+        row = OrderAttachment.objects.select_related('order').get(
+            order_id=pk, order__state__in=['draft', 'confirmed', 'supplied', 'completed', 'void'], kind=kind,
+        )
+    except OrderAttachment.DoesNotExist:
+        raise BusinessError('not_found', 404)
+    if request.method == 'GET':
+        return FileResponse(row.file.open('rb'), as_attachment=True, filename=row.original_name, content_type='application/pdf')
+    order_number = row.order.number
+    row.file.delete(save=False)
+    row.delete()
+    Audit.objects.create(actor=request.user, action='order.attachment.delete', target=f'{order_number}:{kind}')
+    return Response(status=204)
 
 
 @api_view(['GET'])

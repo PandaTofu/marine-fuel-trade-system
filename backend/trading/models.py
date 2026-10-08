@@ -1,6 +1,9 @@
 import uuid
+from pathlib import Path
 from django.conf import settings
 from django.db import models
+from django.db.models.signals import post_delete
+from django.dispatch import receiver
 from core.models import Reference
 
 
@@ -152,6 +155,32 @@ class OrderDocument(models.Model):
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=['order', 'kind'], name='trading_order_document_kind')]
+
+
+def order_attachment_path(instance, filename):
+    extension = Path(filename).suffix.lower()
+    return f'orders/{instance.order.public_id}/{instance.kind}{extension}'
+
+
+class OrderAttachment(models.Model):
+    KINDS = [('supplier_invoice', 'Supplier invoice'), ('bdn', 'BDN')]
+
+    order = models.ForeignKey(Order, related_name='attachments', on_delete=models.CASCADE)
+    kind = models.CharField(max_length=24, choices=KINDS)
+    file = models.FileField(upload_to=order_attachment_path, max_length=300)
+    original_name = models.CharField(max_length=255)
+    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    uploaded_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['kind']
+        constraints = [models.UniqueConstraint(fields=['order', 'kind'], name='trading_order_attachment_kind')]
+
+
+@receiver(post_delete, sender=OrderAttachment)
+def remove_order_attachment_file(sender, instance, **kwargs):
+    if instance.file:
+        instance.file.delete(save=False)
 
 
 class DocumentEmail(models.Model):

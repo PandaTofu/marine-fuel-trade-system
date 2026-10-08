@@ -14,6 +14,7 @@ import {
   Tag,
   Tabs,
   Tooltip,
+  Upload,
 } from "antd";
 import {
   DeleteOutlined,
@@ -22,11 +23,12 @@ import {
   EyeOutlined,
   PlusOutlined,
   SendOutlined,
+  UploadOutlined,
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "../auth";
-import { api } from "../api";
+import { api, uploadApi } from "../api";
 import { ErrorBox, Language } from "../components";
 import { useLocaleValidation } from "../useLocaleValidation";
 import {
@@ -48,6 +50,8 @@ import {
   type Revision,
   type LedgerList,
   type Entry,
+  type OrderAttachment,
+  type OrderAttachmentKind,
 } from "./types";
 
 export function OrderEditor({
@@ -1101,11 +1105,16 @@ export function OrderDetail({
   const salesContractDocument = useResource<DocumentResponse>(
     `trading/orders/${order.id}/documents/sales_contract/`,
   );
+  const attachments = useResource<OrderAttachment[]>(
+    `trading/orders/${order.id}/attachments/`,
+  );
   const [snapshot, setSnapshot] = useState<Order>(order),
     [highlightedFields, setHighlightedFields] = useState<Set<string>>(new Set()),
     [activeDetailTab, setActiveDetailTab] = useState("detail"),
     [payment, setPayment] = useState(false),
     [documentError, setDocumentError] = useState(""),
+    [attachmentError, setAttachmentError] = useState(""),
+    [uploadingAttachment, setUploadingAttachment] = useState<OrderAttachmentKind | null>(null),
     [downloading, setDownloading] = useState<DocumentKind | null>(null);
   const payments = (ledger.data?.results || []).filter((entry) =>
     ["customer_receipt", "supplier_payment", "commission"].includes(
@@ -1144,6 +1153,67 @@ export function OrderDetail({
           )
           .join("；")
       : t(`biz.${revision.action}`);
+  const detailValue = (key: string) => {
+    if (key === "state") return <Status value={snapshot.state} />;
+    const value = (snapshot as unknown as Record<string, unknown>)[key];
+    return value === null || value === undefined || value === "" ? "—" : String(value);
+  };
+  const detailGroup = (titleKey: string, fields: string[]) => (
+    <section className="order-detail-group">
+      <h3>{t(`biz.${titleKey}`)}</h3>
+      <div className="order-detail-fields">
+        {fields.map((key) => (
+          <div key={key} className={highlightedFields.has(key) ? "revision-field-highlight" : undefined}>
+            <span>{t(key === "state" ? "biz.orderStatus" : `biz.${key}`)}</span>
+            <strong>{detailValue(key)}</strong>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+  const numberGroup = (titleKey: string, fields: string[]) => (
+    <section className="order-detail-group">
+      <h3>{t(`biz.${titleKey}`)}</h3>
+      <div className="order-detail-fields">
+        {fields.map((key) => {
+          const value = snapshot.numbers[key as keyof typeof snapshot.numbers];
+          return (
+            <div key={key} className={highlightedFields.has(`numbers.${key}`) ? "revision-field-highlight" : undefined}>
+              <span>{t(`biz.${key}`)}</span>
+              <strong>
+                {key.endsWith("_status") ? <Status value={String(value)} /> : key.endsWith("_due") ? (value || "—") : cash(value)}
+              </strong>
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+  const uploadAttachment = async (kind: OrderAttachmentKind, file: File) => {
+    setAttachmentError("");
+    setUploadingAttachment(kind);
+    const data = new FormData();
+    data.append("kind", kind);
+    data.append("file", file);
+    try {
+      await uploadApi(`trading/orders/${order.id}/attachments/`, data);
+      attachments.refresh();
+    } catch (error) {
+      setAttachmentError(error instanceof Error ? error.message : "errors.server_error");
+    } finally {
+      setUploadingAttachment(null);
+    }
+  };
+  const downloadAttachment = async (row: OrderAttachment) => {
+    const response = await fetch(`/api/trading/orders/${order.id}/attachments/${row.kind}/`, { credentials: "same-origin" });
+    if (!response.ok) throw new Error("errors.server_error");
+    const url = URL.createObjectURL(await response.blob());
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = row.original_name;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
   const documentCard = (
     kind: DocumentKind,
     resource: typeof invoiceDocument,
@@ -1249,54 +1319,44 @@ export function OrderDetail({
                     }
                   />
                 )}
-                <div className="business-detail">
-                  {[
-                    "state",
-                    "order_date",
-                    "customer",
-                    "supplier",
-                    "vessel",
-                    "port",
-                    "imo",
-                    "estimated_start_date",
-                    "estimated_end_date",
-                    "actual_date",
-                    "customer_term",
-                    "customer_term_description",
-                    "supplier_term",
-                    "supplier_term_description",
-                    ...(user?.role === "admin" ? ["commission_rate", "commission_recipient", "salesperson"] : []),
-                    "customer_fee",
-                    "supplier_fee",
-                    "berth_fee",
-                    "exceptional_fee",
-                    "note",
-                  ].map((key) => (
-                    <div
-                      key={key}
-                      className={
-                        highlightedFields.has(key)
-                          ? "revision-field-highlight"
-                          : undefined
-                      }
-                    >
-                      <span>
-                        {t(key === "state" ? "biz.orderStatus" : `biz.${key}`)}
-                      </span>
-                      <strong>
-                        {key === "state" ? (
-                          <Status value={snapshot.state} />
-                        ) : (
-                          String(
-                            (snapshot as unknown as Record<string, unknown>)[
-                              key
-                            ] ?? "—",
-                          )
-                        )}
-                      </strong>
-                    </div>
-                  ))}
+                <div className="order-detail-hero">
+                  <div>
+                    <span>{t("biz.orderOverview")}</span>
+                    <h2>{snapshot.vessel} · {snapshot.customer}</h2>
+                    <Space wrap>
+                      <Status value={snapshot.state} />
+                      <span>{snapshot.number}</span>
+                      <span>{snapshot.order_date}</span>
+                    </Space>
+                  </div>
+                  <div className="order-detail-metrics">
+                    {[
+                      ["sales", snapshot.numbers.sales],
+                      ["cost", snapshot.numbers.cost],
+                      ...(user?.role === "admin" ? [["profit", snapshot.numbers.profit]] : []),
+                      ["receivable", snapshot.numbers.receivable],
+                      ["payable", snapshot.numbers.payable],
+                    ].map(([key, value]) => (
+                      <div key={key} className={highlightedFields.has(`numbers.${key}`) ? "revision-field-highlight" : undefined}>
+                        <span>{t(`biz.${key}`)}</span>
+                        <strong>{cash(value)}</strong>
+                      </div>
+                    ))}
+                  </div>
                 </div>
+                <div className="order-detail-groups">
+                  {detailGroup("basicInformation", ["state", "order_date", "customer", "supplier", "vessel", "port", "imo"])}
+                  {detailGroup("supplyInformation", ["estimated_start_date", "estimated_end_date", "actual_date"])}
+                  {detailGroup("customerReceipt", ["customer_term", "customer_term_description"])}
+                  {detailGroup("supplierPayment", ["supplier_term", "supplier_term_description"])}
+                  {numberGroup("customerSettlement", ["customer_deposit", "customer_received", "receivable", "customer_due", "customer_status"])}
+                  {numberGroup("supplierSettlement", ["supplier_deposit", "supplier_paid", "payable", "supplier_due", "supplier_status"])}
+                  {detailGroup("otherFees", ["customer_fee", "supplier_fee", "berth_fee", "exceptional_fee"])}
+                  {user?.role === "admin" && detailGroup("performanceCommission", ["salesperson", "commission_rate", "commission_recipient"])}
+                  {detailGroup("note", ["note"])}
+                </div>
+                <section className="order-detail-group order-detail-lines">
+                  <h3>{t("biz.productDetails")}</h3>
                 <div
                   className={
                     highlightedFields.has("lines")
@@ -1321,29 +1381,7 @@ export function OrderDetail({
                     ].map((key) => ({ title: t(`biz.${key}`), dataIndex: key }))}
                   />
                 </div>
-                <div className="business-detail">
-                  {Object.entries(snapshot.numbers)
-                    .filter(([key]) => user?.role === "admin" || !["commission", "profit"].includes(key))
-                    .map(([key, value]) => (
-                    <div
-                      key={key}
-                      className={
-                        highlightedFields.has(`numbers.${key}`)
-                          ? "revision-field-highlight"
-                          : undefined
-                      }
-                    >
-                      <span>{t(`biz.${key}`)}</span>
-                      <strong>
-                        {key.endsWith("_status") ? (
-                          <Status value={String(value)} />
-                        ) : (
-                          (value ?? "—")
-                        )}
-                      </strong>
-                    </div>
-                  ))}
-                </div>
+                </section>
               </>
             ),
           },
@@ -1476,6 +1514,80 @@ export function OrderDetail({
                 {documentCard("invoice", invoiceDocument)}
                 {documentCard("sales_contract", salesContractDocument)}
                 {documentCard("purchase_contract", purchaseContractDocument)}
+              </div>
+            ),
+          },
+          {
+            key: "attachments",
+            label: t("biz.orderAttachments"),
+            children: (
+              <div className="order-attachments-panel">
+                <div className="order-attachments-heading">
+                  <div>
+                    <h3>{t("biz.orderAttachments")}</h3>
+                    <p>{t("biz.orderAttachmentsHint")}</p>
+                  </div>
+                  <Space wrap>
+                    {(["supplier_invoice", "bdn"] as OrderAttachmentKind[]).map((kind) => (
+                      <Upload
+                        key={kind}
+                        accept="application/pdf,.pdf"
+                        maxCount={1}
+                        showUploadList={false}
+                        beforeUpload={(file) => {
+                          void uploadAttachment(kind, file);
+                          return false;
+                        }}
+                      >
+                        <Button type="primary" icon={<UploadOutlined />} loading={uploadingAttachment === kind}>
+                          {t(`biz.upload_${kind}`)}
+                        </Button>
+                      </Upload>
+                    ))}
+                  </Space>
+                </div>
+                <ErrorBox error={attachmentError || attachments.error} retry={attachments.refresh} />
+                <Table<OrderAttachment>
+                  rowKey="kind"
+                  loading={attachments.loading}
+                  dataSource={attachments.data || []}
+                  pagination={false}
+                  locale={{ emptyText: t("biz.noOrderAttachments") }}
+                  columns={[
+                    { title: t("biz.type"), dataIndex: "kind", render: (value: string) => t(`biz.${value}`) },
+                    { title: t("biz.fileName"), dataIndex: "original_name" },
+                    { title: t("biz.uploadedAt"), dataIndex: "uploaded_at", render: (value: string) => new Date(value).toLocaleString() },
+                    { title: t("biz.operator"), dataIndex: "uploaded_by" },
+                    {
+                      title: t("biz.action"),
+                      render: (_: unknown, row: OrderAttachment) => (
+                        <Space>
+                          <Tooltip title={t("biz.downloadPdf")}>
+                            <Button type="text" icon={<DownloadOutlined />} onClick={() => void downloadAttachment(row)} />
+                          </Tooltip>
+                          <Tooltip title={t("biz.delete")}>
+                            <Button
+                              type="text"
+                              danger
+                              icon={<DeleteOutlined />}
+                              onClick={() => Modal.confirm({
+                                title: t("biz.deleteAttachmentTitle"),
+                                content: t("biz.deleteAttachmentHint"),
+                                okText: t("biz.confirm"),
+                                cancelText: t("biz.cancel"),
+                                okButtonProps: { danger: true },
+                                onOk: async () => {
+                                  await api(`trading/orders/${order.id}/attachments/${row.kind}/`, "DELETE");
+                                  attachments.refresh();
+                                },
+                              })}
+                            />
+                          </Tooltip>
+                        </Space>
+                      ),
+                    },
+                  ]}
+                />
               </div>
             ),
           },

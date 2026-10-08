@@ -41,6 +41,27 @@ export async function api<T = unknown>(
     throw new Error("networkError");
   }
 }
+
+export async function uploadApi<T>(path: string, data: FormData): Promise<T> {
+  if (!csrfToken) {
+    const response = await fetch("/api/auth/csrf/", { credentials: "same-origin" });
+    csrfToken = (await response.json()).csrfToken;
+  }
+  try {
+    const response = await fetch(`/api/${path}`, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "X-CSRFToken": csrfToken },
+      body: data,
+    });
+    const body = await response.json().catch(() => ({ code: "server_error" }));
+    if (!response.ok) throw new ApiError(body.code || "server_error", response.status, body.fields);
+    return body;
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throw new Error("networkError");
+  }
+}
 export interface User {
   id: number;
   username: string;

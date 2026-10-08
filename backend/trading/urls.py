@@ -19,6 +19,8 @@ urlpatterns = [
     path('orders/<int:pk>/settlement/',views.settlement),
     path('orders/<int:pk>/refund/',views.order_refund),
     path('orders/<int:pk>/history/',views.order_history),
+    path('orders/<int:pk>/attachments/', views.order_attachments),
+    path('orders/<int:pk>/attachments/<str:kind>/', views.order_attachment),
     path('orders/<int:pk>/delete/',views.order_close,{'action':'delete'}),
     path('orders/<int:pk>/void/',views.order_close,{'action':'void'}),
     path('accounts/',views.accounts),
