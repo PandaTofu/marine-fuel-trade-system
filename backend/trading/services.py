@@ -221,6 +221,10 @@ def next_order_number(order_date):
 
 
 def save_order(actor, payload, pk=None):
+    payload = payload.copy()
+    # These bank fees are accumulated only alongside a receipt or payment.
+    payload.pop('customer_fee', None)
+    payload.pop('supplier_fee', None)
     row = locked_order(pk) if pk else None
     creating = row is None
     previous_state = row.state if row else None
@@ -228,8 +232,6 @@ def save_order(actor, payload, pk=None):
         check_version(row, payload.get('version'))
         if row.state not in [*FINANCIAL_ORDER_STATES, 'draft']:
             raise BusinessError('order_closed', 409)
-        if row.state in FINANCIAL_ORDER_STATES and row.entries.exists() and not str(payload.get('reason', '')).strip():
-            raise BusinessError('reason_required')
         if payload.get('desired_state') == 'void':
             close_order(row, actor, payload.get('version'), str(payload.get('reason', '')), void=True)
             row.refresh_from_db()
@@ -335,7 +337,12 @@ def settle(order, actor, values):
         if delta:
             post_component(order, actor, key, delta, values['date'], target_account, source='correction' if delta < 0 else 'settlement', reason=reason)
             changed = True
-    for key in ['customer_fee', 'supplier_fee', 'berth_fee', 'exceptional_fee']:
+    for key in ['customer_fee', 'supplier_fee']:
+        delta = values.get(f'{key}_delta', ZERO)
+        if delta:
+            setattr(order, key, getattr(order, key) + delta)
+            changed = True
+    for key in ['berth_fee', 'exceptional_fee']:
         if key in values and getattr(order, key) != values[key]:
             if values[key] < getattr(order, key) and not reason.strip():
                 raise BusinessError('reason_required')

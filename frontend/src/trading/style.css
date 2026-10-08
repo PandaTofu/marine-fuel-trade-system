@@ -561,6 +561,26 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.revision-field-highlight {
+  padding: 10px 12px;
+  border-color: #f4c95d !important;
+  border-radius: 8px;
+  background: #fff8df !important;
+  box-shadow: inset 3px 0 0 #e5a817;
+}
+.revision-table-highlight {
+  padding: 4px;
+  border: 2px solid #f4c95d;
+  border-radius: 10px;
+  background: #fff8df;
+}
+.revision-change-summary {
+  display: block;
+  max-width: 360px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
 .workspace-main {
   min-width: 0;
 }

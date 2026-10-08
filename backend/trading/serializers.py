@@ -107,8 +107,8 @@ class SettlementSerializer(serializers.Serializer):
     customer_received = serializers.DecimalField(max_digits=18, decimal_places=2, min_value=0, required=False)
     supplier_deposit = serializers.DecimalField(max_digits=18, decimal_places=2, min_value=0, required=False)
     supplier_paid = serializers.DecimalField(max_digits=18, decimal_places=2, min_value=0, required=False)
-    customer_fee = serializers.DecimalField(max_digits=18, decimal_places=2, min_value=0, required=False)
-    supplier_fee = serializers.DecimalField(max_digits=18, decimal_places=2, min_value=0, required=False)
+    customer_fee_delta = serializers.DecimalField(max_digits=18, decimal_places=2, min_value=0, required=False, write_only=True)
+    supplier_fee_delta = serializers.DecimalField(max_digits=18, decimal_places=2, min_value=0, required=False, write_only=True)
     berth_fee = serializers.DecimalField(max_digits=18, decimal_places=2, min_value=0, required=False)
     exceptional_fee = serializers.DecimalField(max_digits=18, decimal_places=2, min_value=0, required=False)
 

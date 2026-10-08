@@ -30,7 +30,7 @@ def order_payload(supplied=True):
             'vessel':'Vessel A', 'port':'Singapore', 'imo':'',
             'actual_date':day.isoformat() if supplied else None,
             'customer_term':10, 'supplier_term':15, 'commission_rate':'50.0000',
-            'customer_fee':'100.00', 'supplier_fee':'50.00', 'berth_fee':'1000.00', 'exceptional_fee':'0.00',
+            'berth_fee':'1000.00', 'exceptional_fee':'0.00',
             'salesperson':'李明', 'currency':'USD',
             'lines':[
                 {'oil':'VLSFO','ordered_qty_min':'95.000','ordered_qty_max':'105.000','actual_qty':'100.000' if supplied else None,'sale_price':'6000.0000','cost_price':'5600.0000'},
@@ -320,8 +320,13 @@ class TradingTests(TestCase):
     def test_fee_net_receipt_does_not_deduct_cash_twice(self):
         payload=order_payload()
         payload['lines']=[{'oil':'Fuel','ordered_qty_min':'1.000','ordered_qty_max':'1.000','actual_qty':'1.000','sale_price':'100000.0000','cost_price':'90000.0000'}]
+        payload.update(customer_fee='999.00', supplier_fee='888.00')
         order=self.create_order(payload)
-        order=self.settle(order,customer_received='99900.00')
+        self.assertEqual(order['customer_fee'], '0.00')
+        self.assertEqual(order['supplier_fee'], '0.00')
+        order=self.settle(order,customer_received='99900.00',customer_fee_delta='60.00')
+        order=self.settle(order,customer_fee_delta='40.00')
+        self.assertEqual(order['customer_fee'],'100.00')
         self.assertEqual(order['numbers']['receivable'],'0.00')
         self.assertEqual(order['numbers']['customer_status'],'settled')
         self.assertEqual(account_balance(self.account),Decimal('1099900.00'))
@@ -346,6 +351,12 @@ class TradingTests(TestCase):
         updated=self.settle(unchanged,customer_received='130000.00')
         self.assertEqual(Entry.objects.latest('id').amount,Decimal('30000.00'))
         self.assertEqual(updated['numbers']['customer_received'],'130000.00')
+        edit = order_payload()
+        edit.update(version=updated['version'], customer='Edited without a reason')
+        edited = self.write(f"orders/{order['id']}/", edit, method='patch')
+        self.assertEqual(edited.status_code, 200, edited.data)
+        history = self.client.get(f"/api/trading/orders/{order['id']}/history/").json()
+        self.assertIn('customer', [change['field'] for change in history[0]['changes']])
 
     def test_create_replay_is_single_order_and_key_is_actor_scoped(self):
         key=str(uuid.uuid4());payload=order_payload()
@@ -443,11 +454,11 @@ class TradingTests(TestCase):
 
     def test_negative_profit_allowed_invalid_decimal_and_non_usd_rejected(self):
         payload=order_payload()
-        payload.update(customer_fee='0',supplier_fee='0',berth_fee='0',exceptional_fee='0',commission_rate='0')
+        payload.update(berth_fee='0',exceptional_fee='0',commission_rate='0')
         payload['lines'][0]['sale_price']='0.0000'
         order=self.create_order(payload)
         self.assertTrue(order['numbers']['profit'].startswith('-'))
-        for altered in [dict(payload,currency='CNY'),dict(payload,customer_fee='-1'),dict(payload,exceptional_fee='-1'),dict(payload,lines=[])]:
+        for altered in [dict(payload,currency='CNY'),dict(payload,exceptional_fee='-1'),dict(payload,lines=[])]:
             self.assertEqual(self.write('orders/',altered).status_code,400)
         precision=copy.deepcopy(payload);precision['lines'][0]['ordered_qty_min']='1.0001'
         self.assertEqual(self.write('orders/',precision).status_code,400)
@@ -470,10 +481,16 @@ class TradingTests(TestCase):
     def test_filtered_orders_export_contains_only_matching_orders(self):
         alpha = order_payload(False)
         alpha['customer'] = 'Alpha Shipping'
-        self.create_order(alpha)
+        alpha['order_date'] = (timezone.localdate() - timedelta(days=2)).isoformat()
+        alpha_order = self.create_order(alpha)
         beta = order_payload(False)
         beta['customer'] = 'Beta Shipping'
-        self.create_order(beta)
+        beta['order_date'] = (timezone.localdate() - timedelta(days=1)).isoformat()
+        beta_order = self.create_order(beta)
+        ascending = self.client.get('/api/trading/orders/', {'ordering': 'order_date'}).json()['results']
+        self.assertEqual([row['id'] for row in ascending], [alpha_order['id'], beta_order['id']])
+        by_id = self.client.get('/api/trading/orders/').json()['results']
+        self.assertEqual([row['id'] for row in by_id], [beta_order['id'], alpha_order['id']])
         response = self.client.get('/api/trading/orders/export/', {'customer': 'Alpha'})
         self.assertEqual(response.status_code, 200)
         self.assertIn('orders_', response['Content-Disposition'])

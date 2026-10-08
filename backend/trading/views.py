@@ -60,6 +60,10 @@ def order_rows(params, actor=None):
             qs = qs.filter(state__in=FINANCIAL_ORDER_STATES)
         else:
             qs = qs.filter(state=params['state'])
+    ordering = params.get('ordering', '-id')
+    if ordering not in {'id', '-id', 'order_date', '-order_date'}:
+        raise BusinessError('invalid')
+    qs = qs.order_by(ordering)
     rows = list(OrderSerializer(qs, many=True, context={'actor': actor}).data)
     for side in ['customer', 'supplier']:
         value = params.get(f'{side}_status')
@@ -407,13 +411,43 @@ def order_history(request, pk):
         row = Order.objects.get(pk=pk)
     except Order.DoesNotExist:
         raise BusinessError('not_found',404)
-    results = []
-    for rev in row.revisions.select_related('actor').all():
-        snapshot = {**rev.snapshot}
+    def visible_snapshot(value):
+        snapshot = {**value}
         if request.user.role != 'admin':
             snapshot.update(commission_rate='0.0000', commission_recipient='', salesperson='', salesperson_reference=None)
             snapshot['numbers'] = {**snapshot.get('numbers', {}), 'commission': '0.00', 'profit': '0.00'}
-        results.append({'version':rev.version,'action':rev.action,'reason':rev.reason,'actor':rev.actor.username,'created_at':rev.created_at.isoformat(),'snapshot':snapshot})
+        return snapshot
+
+    def changed_fields(before, after):
+        result = []
+        fields = [
+            'state', 'order_date', 'customer', 'supplier', 'vessel', 'port', 'imo',
+            'estimated_start_date', 'estimated_end_date', 'actual_date',
+            'customer_term', 'customer_term_description', 'supplier_term',
+            'supplier_term_description', 'commission_rate', 'commission_recipient',
+            'salesperson', 'customer_fee', 'supplier_fee', 'berth_fee',
+            'exceptional_fee', 'note',
+        ]
+        for field in fields:
+            if before.get(field) != after.get(field):
+                result.append({'field': field, 'before': before.get(field), 'after': after.get(field)})
+        if before.get('lines') != after.get('lines'):
+            result.append({'field': 'lines', 'before': len(before.get('lines') or []), 'after': len(after.get('lines') or [])})
+        for field in ['customer_deposit', 'customer_received', 'supplier_deposit', 'supplier_paid']:
+            old = (before.get('numbers') or {}).get(field)
+            new = (after.get('numbers') or {}).get(field)
+            if old != new:
+                result.append({'field': f'numbers.{field}', 'before': old, 'after': new})
+        return result
+
+    revisions = list(row.revisions.select_related('actor').order_by('version'))
+    results = []
+    previous = {}
+    for rev in revisions:
+        snapshot = visible_snapshot(rev.snapshot)
+        results.append({'version':rev.version,'action':rev.action,'reason':rev.reason,'actor':rev.actor.username,'created_at':rev.created_at.isoformat(),'changes':changed_fields(previous, snapshot) if previous else [],'snapshot':snapshot})
+        previous = snapshot
+    results.reverse()
     return Response(results)
 
 

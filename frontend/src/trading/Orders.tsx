@@ -66,7 +66,8 @@ export default function Orders({
   const [filters, setFilters] = useState<Record<string, unknown>>(
       settlements ? { state: "financial" } : {},
     ),
-    [page, setPage] = useState(1);
+    [page, setPage] = useState(1),
+    [ordering, setOrdering] = useState("-id");
   const [filterForm] = Form.useForm();
   const [advancedFiltersOpen, setAdvancedFiltersOpen] = useState(false);
   const [activeTab, setActiveTab] = useState(() =>
@@ -78,7 +79,7 @@ export default function Orders({
   const [exportError, setExportError] = useState("");
   const [documentRevision, setDocumentRevision] = useState(0);
   const r = useResource<OrderList>(
-    "trading/orders/?" + query({ ...filters, page }),
+    "trading/orders/?" + query({ ...filters, page, ordering }),
   );
   const [editor, setEditor] = useState<Order | null>(() =>
       settlements ? null : savedOrderWorkspace().editor || null,
@@ -111,6 +112,14 @@ export default function Orders({
     {
       title: t("biz.number"),
       dataIndex: "number",
+      key: "id",
+      sorter: true,
+      sortOrder:
+        ordering === "id"
+          ? "ascend"
+          : ordering === "-id"
+            ? "descend"
+            : null,
       width: 195,
       render: (v: string, o: Order) => (
         <Space direction="vertical" size={2}>
@@ -127,7 +136,20 @@ export default function Orders({
         </Space>
       ),
     },
-    ...["order_date", "customer", "vessel", "supplier", "port"].map((key) => ({
+    {
+      title: t("biz.order_date"),
+      dataIndex: "order_date",
+      key: "order_date",
+      width: 145,
+      sorter: true,
+      sortOrder:
+        ordering === "order_date"
+          ? "ascend"
+          : ordering === "-order_date"
+            ? "descend"
+            : null,
+    },
+    ...["vessel", "customer", "supplier", "port"].map((key) => ({
       title: t(`biz.${key}`),
       dataIndex: key,
       width: 145,
@@ -175,7 +197,6 @@ export default function Orders({
     {
       title: t("biz.action"),
       width: settlements ? 230 : 110,
-      fixed: "right",
       render: (_: unknown, o: Order) => (
         <div className="order-row-actions">
           {settlements ? (
@@ -498,6 +519,20 @@ export default function Orders({
         columns={columns}
         scroll={{ x: 2600 }}
         rowClassName={(row) => row.state === "void" ? "order-row-void" : ""}
+        onChange={(_pagination, _tableFilters, sorter) => {
+          const activeSorter = Array.isArray(sorter) ? sorter[0] : sorter;
+          const field = String(activeSorter.columnKey || activeSorter.field || "");
+          let nextOrdering = ordering;
+          if (!activeSorter.order) {
+            nextOrdering = "-id";
+          } else if (field === "id" || field === "order_date") {
+            nextOrdering = `${activeSorter.order === "descend" ? "-" : ""}${field}`;
+          }
+          if (nextOrdering !== ordering) {
+            setOrdering(nextOrdering);
+            setPage(1);
+          }
+        }}
         pagination={{
           current: page,
           pageSize: 20,

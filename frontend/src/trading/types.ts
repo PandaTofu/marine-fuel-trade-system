@@ -175,5 +175,10 @@ export interface Revision {
   actor: string;
   reason: string;
   created_at: string;
+  changes: {
+    field: string;
+    before: unknown;
+    after: unknown;
+  }[];
   snapshot: Order;
 }

@@ -167,10 +167,10 @@ export function OrderEditor({
     totals.sale -
     cents(values.customer_deposit) -
     cents(values.customer_received) -
-    cents(values.customer_fee);
+    cents(order?.customer_fee);
   const otherFees =
-    cents(values.customer_fee) +
-    cents(values.supplier_fee) +
+    cents(order?.customer_fee) +
+    cents(order?.supplier_fee) +
     cents(values.berth_fee) +
     cents(values.exceptional_fee);
   const actualProfit = totals.sale - totals.cost - commission - otherFees;
@@ -211,8 +211,6 @@ export function OrderEditor({
         customer_term: 0,
         supplier_term: 0,
         commission_rate: "0",
-        customer_fee: "0",
-        supplier_fee: "0",
         berth_fee: "0",
         exceptional_fee: "0",
         lines: [
@@ -290,6 +288,8 @@ export function OrderEditor({
             supplier_deposit,
             supplier_paid,
             account_id,
+            customer_fee,
+            supplier_fee,
             ...fields
           } = values;
           void customer_deposit;
@@ -297,6 +297,8 @@ export function OrderEditor({
           void supplier_deposit;
           void supplier_paid;
           void account_id;
+          void customer_fee;
+          void supplier_fee;
           const payload = {
             ...fields,
             currency: "USD",
@@ -579,7 +581,6 @@ export function OrderEditor({
               {section(
                 t("biz.supplierPayment"),
                 <div className="business-form-grid compact">
-                  {input("supplier_term_description")}
                   <Form.Item
                     name="supplier_term"
                     label={t("biz.paymentDays")}
@@ -587,12 +588,12 @@ export function OrderEditor({
                   >
                     <InputNumber min={0} max={32767} precision={0} />
                   </Form.Item>
+                  {input("supplier_term_description")}
                 </div>,
               )}
               {section(
                 t("biz.customerReceipt"),
                 <div className="business-form-grid compact">
-                  {input("customer_term_description")}
                   <Form.Item
                     name="customer_term"
                     label={t("biz.paymentDays")}
@@ -600,6 +601,7 @@ export function OrderEditor({
                   >
                     <InputNumber min={0} max={32767} precision={0} />
                   </Form.Item>
+                  {input("customer_term_description")}
                 </div>,
               )}
             </div>
@@ -607,8 +609,6 @@ export function OrderEditor({
               t("biz.otherFees"),
               <div className="business-form-grid adaptive">
                 {[
-                  "customer_fee",
-                  "supplier_fee",
                   "berth_fee",
                   "exceptional_fee",
                 ].map((key) => (
@@ -811,8 +811,8 @@ export function SettlementEditor({
         layout="vertical"
         initialValues={{
           ...order.numbers,
-          customer_fee: order.customer_fee,
-          supplier_fee: order.supplier_fee,
+          customer_fee_delta: "0",
+          supplier_fee_delta: "0",
           berth_fee: order.berth_fee,
           exceptional_fee: order.exceptional_fee,
           date: today(),
@@ -862,8 +862,8 @@ export function SettlementEditor({
                 </Form.Item>
               ))}
               {[
-                "customer_fee",
-                "supplier_fee",
+                "customer_fee_delta",
+                "supplier_fee_delta",
                 "berth_fee",
                 "exceptional_fee",
               ].map((key) => (
@@ -955,6 +955,9 @@ function OrderPaymentEditor({
             account_id: values.account_id,
             date: values.date,
             reason: values.reason,
+            [values.payment_action === "receipt"
+              ? "customer_fee_delta"
+              : "supplier_fee_delta"]: values.fee,
             [component]: addMoney(
               String(order.numbers[component] || "0"),
               values.amount,
@@ -987,7 +990,12 @@ function OrderPaymentEditor({
       <Form
         form={form}
         layout="vertical"
-        initialValues={{ payment_action: "receipt", date: today(), reason: "" }}
+        initialValues={{
+          payment_action: "receipt",
+          fee: "0",
+          date: today(),
+          reason: "",
+        }}
         onFinish={submit}
       >
         <Form.Item
@@ -1000,7 +1008,9 @@ function OrderPaymentEditor({
               value,
               label: t(`biz.${value}Action`),
             }))}
-            onChange={() => form.setFieldValue("component", undefined)}
+            onChange={() =>
+              form.setFieldsValue({ component: undefined, fee: "0" })
+            }
           />
         </Form.Item>
         {action !== "commission" && (
@@ -1022,6 +1032,19 @@ function OrderPaymentEditor({
           <Form.Item name="amount" label={t("biz.amount")} rules={required}>
             <MoneyInput />
           </Form.Item>
+          {action !== "commission" && (
+            <Form.Item
+              name="fee"
+              label={t(
+                action === "receipt"
+                  ? "biz.customerFeeThisTime"
+                  : "biz.supplierFeeThisTime",
+              )}
+              rules={required}
+            >
+              <MoneyInput />
+            </Form.Item>
+          )}
           <Form.Item
             name="account_id"
             label={t("biz.account")}
@@ -1079,6 +1102,7 @@ export function OrderDetail({
     `trading/orders/${order.id}/documents/sales_contract/`,
   );
   const [snapshot, setSnapshot] = useState<Order>(order),
+    [highlightedFields, setHighlightedFields] = useState<Set<string>>(new Set()),
     [activeDetailTab, setActiveDetailTab] = useState("detail"),
     [payment, setPayment] = useState(false),
     [documentError, setDocumentError] = useState(""),
@@ -1103,6 +1127,23 @@ export function OrderDetail({
       </Button>
     </div>
   );
+  const changeLabel = (field: string) =>
+    t(
+      field === "lines"
+        ? "biz.productDetails"
+        : `biz.${field.replace("numbers.", "")}`,
+    );
+  const changeValue = (value: unknown) =>
+    value === null || value === undefined || value === "" ? "—" : String(value);
+  const changeSummary = (revision: Revision) =>
+    revision.changes.length
+      ? revision.changes
+          .map(
+            (change) =>
+              `${changeLabel(change.field)}: ${changeValue(change.before)} → ${changeValue(change.after)}`,
+          )
+          .join("；")
+      : t(`biz.${revision.action}`);
   const documentCard = (
     kind: DocumentKind,
     resource: typeof invoiceDocument,
@@ -1198,7 +1239,10 @@ export function OrderDetail({
                     action={
                       <Button
                         size="small"
-                        onClick={() => setSnapshot(order)}
+                        onClick={() => {
+                          setSnapshot(order);
+                          setHighlightedFields(new Set());
+                        }}
                       >
                         {t("biz.backToLatest")}
                       </Button>
@@ -1217,10 +1261,10 @@ export function OrderDetail({
                     "estimated_start_date",
                     "estimated_end_date",
                     "actual_date",
-                    "customer_term_description",
                     "customer_term",
-                    "supplier_term_description",
+                    "customer_term_description",
                     "supplier_term",
+                    "supplier_term_description",
                     ...(user?.role === "admin" ? ["commission_rate", "commission_recipient", "salesperson"] : []),
                     "customer_fee",
                     "supplier_fee",
@@ -1228,7 +1272,14 @@ export function OrderDetail({
                     "exceptional_fee",
                     "note",
                   ].map((key) => (
-                    <div key={key}>
+                    <div
+                      key={key}
+                      className={
+                        highlightedFields.has(key)
+                          ? "revision-field-highlight"
+                          : undefined
+                      }
+                    >
                       <span>
                         {t(key === "state" ? "biz.orderStatus" : `biz.${key}`)}
                       </span>
@@ -1246,27 +1297,42 @@ export function OrderDetail({
                     </div>
                   ))}
                 </div>
-                <Table
-                  rowKey={(_, index) => String(index)}
-                  pagination={false}
-                  scroll={{ x: 760 }}
-                  dataSource={snapshot.lines}
-                  columns={[
-                    "oil",
-                    "ordered_qty_min",
-                    "ordered_qty_max",
-                    "actual_qty",
-                    "sale_price",
-                    "cost_price",
-                    "sale_amount",
-                    "cost_amount",
-                  ].map((key) => ({ title: t(`biz.${key}`), dataIndex: key }))}
-                />
+                <div
+                  className={
+                    highlightedFields.has("lines")
+                      ? "revision-table-highlight"
+                      : undefined
+                  }
+                >
+                  <Table
+                    rowKey={(_, index) => String(index)}
+                    pagination={false}
+                    scroll={{ x: 760 }}
+                    dataSource={snapshot.lines}
+                    columns={[
+                      "oil",
+                      "ordered_qty_min",
+                      "ordered_qty_max",
+                      "actual_qty",
+                      "sale_price",
+                      "cost_price",
+                      "sale_amount",
+                      "cost_amount",
+                    ].map((key) => ({ title: t(`biz.${key}`), dataIndex: key }))}
+                  />
+                </div>
                 <div className="business-detail">
                   {Object.entries(snapshot.numbers)
                     .filter(([key]) => user?.role === "admin" || !["commission", "profit"].includes(key))
                     .map(([key, value]) => (
-                    <div key={key}>
+                    <div
+                      key={key}
+                      className={
+                        highlightedFields.has(`numbers.${key}`)
+                          ? "revision-field-highlight"
+                          : undefined
+                      }
+                    >
                       <span>{t(`biz.${key}`)}</span>
                       <strong>
                         {key.endsWith("_status") ? (
@@ -1432,6 +1498,17 @@ export function OrderDetail({
                       dataIndex: "action",
                       render: (v: string) => t(`biz.${v}`),
                     },
+                    {
+                      title: t("biz.changeSummary"),
+                      render: (_: unknown, revision: Revision) => {
+                        const summary = changeSummary(revision);
+                        return (
+                          <Tooltip title={summary}>
+                            <span className="revision-change-summary">{summary}</span>
+                          </Tooltip>
+                        );
+                      },
+                    },
                     { title: t("biz.reason"), dataIndex: "reason" },
                     {
                       title: t("biz.snapshot"),
@@ -1443,6 +1520,9 @@ export function OrderDetail({
                             icon={<EyeOutlined />}
                             onClick={() => {
                               setSnapshot(r.snapshot);
+                              setHighlightedFields(
+                                new Set(r.changes.map((change) => change.field)),
+                              );
                               setActiveDetailTab("detail");
                             }}
                           />
@@ -1463,6 +1543,7 @@ export function OrderDetail({
           onClose={() => setPayment(false)}
           onSaved={(updated) => {
             setSnapshot(updated);
+            setHighlightedFields(new Set());
             ledger.refresh();
             revisions.refresh();
             onChanged(updated);

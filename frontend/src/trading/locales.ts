@@ -67,3 +67,7 @@ const filterLayoutZh={advancedFilters:'高级筛选',hideAdvancedFilters:'收起
 const filterLayoutEn:typeof filterLayoutZh={advancedFilters:'Advanced filters',hideAdvancedFilters:'Hide advanced filters'};
 i18n.addResourceBundle('zh-CN','translation',{biz:filterLayoutZh},true,true);
 i18n.addResourceBundle('en','translation',{biz:filterLayoutEn},true,true);
+const settlementUpdateZh={customer_fee_delta:'本次客户收款手续费',supplier_fee_delta:'本次供应商付款手续费',customerFeeThisTime:'本次客户收款手续费',supplierFeeThisTime:'本次供应商付款手续费',changeSummary:'修改内容',orderEditHint:'修改原因选填；作废订单时必须填写原因。',settlementHint:'收付款金额按累计值登记；本次手续费会累加到订单。减少已登记金额属于录错更正，需要填写原因。'};
+const settlementUpdateEn:typeof settlementUpdateZh={customer_fee_delta:'Customer receipt fee this time',supplier_fee_delta:'Supplier payment fee this time',customerFeeThisTime:'Customer receipt fee this time',supplierFeeThisTime:'Supplier payment fee this time',changeSummary:'Changes',orderEditHint:'The edit reason is optional. A reason is required when voiding an order.',settlementHint:'Receipt and payment amounts are cumulative. Fees entered this time are added to the order. Reducing a posted amount is a correction and requires a reason.'};
+i18n.addResourceBundle('zh-CN','translation',{biz:settlementUpdateZh},true,true);
+i18n.addResourceBundle('en','translation',{biz:settlementUpdateEn},true,true);
