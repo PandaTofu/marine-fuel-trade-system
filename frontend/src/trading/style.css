@@ -165,14 +165,12 @@
 }
 .order-detail-hero {
   display: flex;
-  align-items: stretch;
+  align-items: center;
   justify-content: space-between;
-  gap: 22px;
+  gap: 28px;
   margin-bottom: 18px;
-  padding: 22px 24px;
-  border: 1px solid #dbe8f3;
-  border-radius: 12px;
-  background: linear-gradient(135deg, #f3f8fd, #fff);
+  padding: 12px 4px 20px;
+  border-bottom: 1px solid #e5edf3;
 }
 .order-detail-hero > div:first-child > span,
 .order-detail-fields span,
@@ -187,15 +185,12 @@
 }
 .order-detail-metrics {
   display: grid;
-  grid-template-columns: repeat(3, minmax(125px, 1fr));
-  min-width: min(58%, 700px);
-  gap: 10px;
+  grid-template-columns: repeat(2, minmax(150px, 1fr));
+  min-width: min(52%, 560px);
+  gap: 14px 28px;
 }
 .order-detail-metrics > div {
-  padding: 10px 13px;
-  border-left: 3px solid #9ec6eb;
-  border-radius: 6px;
-  background: #fff;
+  padding: 2px 0;
 }
 .order-detail-metrics strong {
   display: block;

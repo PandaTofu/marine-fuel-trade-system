@@ -8,6 +8,7 @@ import {
   Input,
   InputNumber,
   Modal,
+  Popconfirm,
   Select,
   Space,
   Table,
@@ -1115,6 +1116,7 @@ export function OrderDetail({
     [documentError, setDocumentError] = useState(""),
     [attachmentError, setAttachmentError] = useState(""),
     [uploadingAttachment, setUploadingAttachment] = useState<OrderAttachmentKind | null>(null),
+    [deletingAttachment, setDeletingAttachment] = useState<OrderAttachmentKind | null>(null),
     [downloading, setDownloading] = useState<DocumentKind | null>(null);
   const payments = (ledger.data?.results || []).filter((entry) =>
     ["customer_receipt", "supplier_payment", "commission"].includes(
@@ -1213,6 +1215,18 @@ export function OrderDetail({
     link.download = row.original_name;
     link.click();
     URL.revokeObjectURL(url);
+  };
+  const deleteAttachment = async (row: OrderAttachment) => {
+    setAttachmentError("");
+    setDeletingAttachment(row.kind);
+    try {
+      await api(`trading/orders/${order.id}/attachments/${row.kind}/`, "DELETE");
+      attachments.refresh();
+    } catch (error) {
+      setAttachmentError(error instanceof Error ? error.message : "errors.server_error");
+    } finally {
+      setDeletingAttachment(null);
+    }
   };
   const documentCard = (
     kind: DocumentKind,
@@ -1333,7 +1347,6 @@ export function OrderDetail({
                     {[
                       ["sales", snapshot.numbers.sales],
                       ["cost", snapshot.numbers.cost],
-                      ...(user?.role === "admin" ? [["profit", snapshot.numbers.profit]] : []),
                       ["receivable", snapshot.numbers.receivable],
                       ["payable", snapshot.numbers.payable],
                     ].map(([key, value]) => (
@@ -1353,6 +1366,7 @@ export function OrderDetail({
                   {numberGroup("supplierSettlement", ["supplier_deposit", "supplier_paid", "payable", "supplier_due", "supplier_status"])}
                   {detailGroup("otherFees", ["customer_fee", "supplier_fee", "berth_fee", "exceptional_fee"])}
                   {user?.role === "admin" && detailGroup("performanceCommission", ["salesperson", "commission_rate", "commission_recipient"])}
+                  {user?.role === "admin" && numberGroup("performanceSummary", ["commission", "profit"])}
                   {detailGroup("note", ["note"])}
                 </div>
                 <section className="order-detail-group order-detail-lines">
@@ -1565,24 +1579,21 @@ export function OrderDetail({
                           <Tooltip title={t("biz.downloadPdf")}>
                             <Button type="text" icon={<DownloadOutlined />} onClick={() => void downloadAttachment(row)} />
                           </Tooltip>
-                          <Tooltip title={t("biz.delete")}>
+                          <Popconfirm
+                            title={t("biz.deleteAttachmentTitle")}
+                            description={t("biz.deleteAttachmentHint")}
+                            okText={t("biz.confirm")}
+                            cancelText={t("biz.cancel")}
+                            okButtonProps={{ danger: true, loading: deletingAttachment === row.kind }}
+                            onConfirm={() => deleteAttachment(row)}
+                          >
                             <Button
                               type="text"
                               danger
                               icon={<DeleteOutlined />}
-                              onClick={() => Modal.confirm({
-                                title: t("biz.deleteAttachmentTitle"),
-                                content: t("biz.deleteAttachmentHint"),
-                                okText: t("biz.confirm"),
-                                cancelText: t("biz.cancel"),
-                                okButtonProps: { danger: true },
-                                onOk: async () => {
-                                  await api(`trading/orders/${order.id}/attachments/${row.kind}/`, "DELETE");
-                                  attachments.refresh();
-                                },
-                              })}
+                              loading={deletingAttachment === row.kind}
                             />
-                          </Tooltip>
+                          </Popconfirm>
                         </Space>
                       ),
                     },
