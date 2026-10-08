@@ -25,6 +25,12 @@ class Reference(models.Model):
     iban = models.CharField(max_length=80, blank=True)
     bank_code = models.CharField(max_length=40, blank=True)
     bank_address = models.CharField(max_length=300, blank=True)
+    oil_category = models.CharField(max_length=80, blank=True)
+    specification = models.CharField(max_length=160, blank=True)
+    unit = models.CharField(max_length=20, blank=True, default='')
+    reference_sale_price = models.DecimalField(max_digits=18, decimal_places=4, null=True, blank=True)
+    reference_cost_price = models.DecimalField(max_digits=18, decimal_places=4, null=True, blank=True)
+    note = models.CharField(max_length=1000, blank=True)
     is_active = models.BooleanField(default=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -81,5 +81,11 @@ export interface Reference {
   iban: string;
   bank_code: string;
   bank_address: string;
+  oil_category: string;
+  specification: string;
+  unit: string;
+  reference_sale_price: string | null;
+  reference_cost_price: string | null;
+  note: string;
   is_active: boolean;
 }

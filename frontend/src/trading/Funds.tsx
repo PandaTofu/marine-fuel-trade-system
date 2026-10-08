@@ -3,12 +3,13 @@ import {
   Alert,
   Button,
   Card,
-  Checkbox,
   Form,
   Input,
+  InputNumber,
   Modal,
   Select,
   Space,
+  Switch,
   Table,
   Tabs,
   Tag,
@@ -58,9 +59,11 @@ function AccountEditor({
   const [form] = Form.useForm();
   useLocaleValidation(form);
   const cmd = useCommand();
+  const currency = Form.useWatch("currency", form) || account?.currency || "USD";
   return (
     <Modal
       open
+      width={900}
       title={
         <Space>
           {t(account ? "biz.edit" : "biz.addAccount")}
@@ -82,6 +85,7 @@ function AccountEditor({
             account_type: "bank",
             currency: "USD",
             opening_balance: "0",
+            opening_exchange_rate: "1.000000",
             is_active: true,
             note: "",
           }
@@ -100,29 +104,17 @@ function AccountEditor({
           }
         }}
       >
-        <Form.Item
-          name="name"
-          label={t("biz.accountName")}
-          rules={[{ required: true, whitespace: true, message: t("required") }]}
-        >
-          <Input maxLength={120} />
-        </Form.Item>
-        <div className="business-form-grid">
+        <div className="account-editor-grid">
           <Form.Item
-            name="account_type"
-            label={t("biz.accountType")}
-            rules={[{ required: true, message: t("required") }]}
+            name="name"
+            label={t("biz.accountName")}
+            rules={[{ required: true, whitespace: true, message: t("required") }]}
           >
-            <Select
-              options={["bank", "cash", "other"].map((value) => ({
-                value,
-                label: t(`biz.${value}Account`),
-              }))}
-            />
+            <Input maxLength={120} />
           </Form.Item>
           <Form.Item
             name="currency"
-            label={t("biz.currency")}
+            label={t("biz.accountCurrency")}
             rules={[{ required: true, message: t("required") }]}
           >
             <Select
@@ -131,22 +123,70 @@ function AccountEditor({
                 value,
                 label: value,
               }))}
+              onChange={(value) => {
+                if (value === "USD") form.setFieldValue("opening_exchange_rate", "1.000000");
+              }}
             />
           </Form.Item>
+          <Form.Item name="beneficiary_name" label={t("biz.beneficiaryName")}>
+            <Input maxLength={160} />
+          </Form.Item>
+          <Form.Item name="bank_account_number" label={t("biz.bankAccountNumber")}>
+            <Input maxLength={100} />
+          </Form.Item>
+          <Form.Item name="bank_name" label={t("biz.bankName")}>
+            <Input maxLength={160} />
+          </Form.Item>
+          <Form.Item name="branch_name" label={t("biz.branchName")}>
+            <Input maxLength={160} />
+          </Form.Item>
+          <Form.Item className="account-editor-full" name="bank_address" label={t("biz.accountBankAddress")}>
+            <Input maxLength={300} />
+          </Form.Item>
+          <div className="account-editor-three account-editor-full">
+            <Form.Item name="swift_code" label={t("biz.swiftCode")}>
+              <Input maxLength={40} />
+            </Form.Item>
+            <Form.Item name="iban" label="IBAN">
+              <Input maxLength={80} />
+            </Form.Item>
+            <Form.Item name="bank_code" label={t("biz.bankCode")}>
+              <Input maxLength={40} />
+            </Form.Item>
+          </div>
+          <Form.Item name="bank_phone" label={t("biz.bankPhone")}>
+            <Input maxLength={60} />
+          </Form.Item>
+          <Form.Item
+            name="opening_balance"
+            label={t("biz.opening_balance")}
+            rules={[{ required: true, message: t("required") }]}
+          >
+            <MoneyInput disabled={account?.has_entries} />
+          </Form.Item>
+          <Form.Item
+            name="opening_exchange_rate"
+            label={t("biz.openingExchangeRate", { currency })}
+            rules={[{ required: true, message: t("required") }]}
+          >
+            <InputNumber<string>
+              stringMode
+              min="0.000001"
+              precision={6}
+              disabled={currency === "USD"}
+              style={{ width: "100%" }}
+            />
+          </Form.Item>
+          <Form.Item name="account_type" label={t("biz.accountType")} rules={[{ required: true, message: t("required") }]}>
+            <Select options={["bank", "cash", "other"].map((value) => ({ value, label: t(`biz.${value}Account`) }))} />
+          </Form.Item>
+          <Form.Item name="is_active" label={t("biz.accountStatus")} valuePropName="checked">
+            <Switch checkedChildren={t("active")} unCheckedChildren={t("inactive")} />
+          </Form.Item>
+          <Form.Item className="account-editor-full" name="note" label={t("biz.note")}>
+            <Input.TextArea maxLength={1000} autoSize={{ minRows: 2, maxRows: 4 }} />
+          </Form.Item>
         </div>
-        <Form.Item
-          name="opening_balance"
-          label={t("biz.opening_balance")}
-          rules={[{ required: true, message: t("required") }]}
-        >
-          <MoneyInput disabled={account?.has_entries} />
-        </Form.Item>
-        <Form.Item name="is_active" valuePropName="checked">
-          <Checkbox>{t("active")}</Checkbox>
-        </Form.Item>
-        <Form.Item name="note" label={t("biz.note")}>
-          <Input.TextArea maxLength={1000} />
-        </Form.Item>
         <Button type="primary" htmlType="submit" loading={cmd.busy}>
           {t("biz.save")}
         </Button>
@@ -203,11 +243,16 @@ function Accounts({ onChanged }: { onChanged: () => void }) {
             title: t("biz.accountName"),
             dataIndex: "name",
             render: (v: string, a: Account) => (
-              <Space>
-                {v}
-                {a.is_default && <Tag color="green">{t("biz.default")}</Tag>}
-                {!a.is_active && <Tag>{t("inactive")}</Tag>}
-              </Space>
+              <div className="account-name-cell">
+                <Space>
+                  <strong>{v}</strong>
+                  {a.is_default && <Tag color="green">{t("biz.default")}</Tag>}
+                  {!a.is_active && <Tag>{t("inactive")}</Tag>}
+                </Space>
+                {(a.bank_name || a.bank_account_number) && (
+                  <span>{[a.bank_name, a.bank_account_number].filter(Boolean).join(" · ")}</span>
+                )}
+              </div>
             ),
           },
           {

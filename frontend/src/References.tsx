@@ -5,6 +5,7 @@ import {
   Card,
   Form,
   Input,
+  InputNumber,
   Modal,
   Space,
   Switch,
@@ -55,10 +56,10 @@ export default function References() {
     setEditing(row);
     setFormError("");
     form.resetFields();
-    form.setFieldsValue(row || { is_active: true });
+    form.setFieldsValue(row || { is_active: true, ...(kind === "oil" ? { unit: "MT" } : {}) });
   };
   const visible = rows.filter((r) =>
-    [r.name, r.code || "", r.email || "", r.swift_code || "", r.iban || ""].some((s) =>
+    [r.name, r.code || "", r.email || "", r.swift_code || "", r.iban || "", r.oil_category || "", r.specification || ""].some((s) =>
       s.toLowerCase().includes(query.toLowerCase()),
     ),
   );
@@ -122,7 +123,7 @@ export default function References() {
           rowKey="id"
           loading={loading}
           dataSource={error ? [] : visible}
-          scroll={{ x: ["customer", "supplier"].includes(kind) ? 1450 : 760 }}
+          scroll={{ x: ["customer", "supplier"].includes(kind) ? 1450 : kind === "oil" ? 1200 : 760 }}
           locale={{ emptyText: t("empty") }}
           columns={[
             {
@@ -150,6 +151,15 @@ export default function References() {
                   { title: t("iban"), dataIndex: "iban", width: 190 },
                   { title: t("bankCode"), dataIndex: "bank_code", width: 140 },
                   { title: t("bankAddress"), dataIndex: "bank_address", width: 280 },
+                ]
+              : []),
+            ...(kind === "oil"
+              ? [
+                  { title: t("oilCategory"), dataIndex: "oil_category", width: 130 },
+                  { title: t("oilSpecification"), dataIndex: "specification", width: 190 },
+                  { title: t("measurementUnit"), dataIndex: "unit", width: 100 },
+                  { title: t("referenceSalePrice"), dataIndex: "reference_sale_price", width: 160, render: (value: string | null) => value || "—" },
+                  { title: t("referenceCostPrice"), dataIndex: "reference_cost_price", width: 160, render: (value: string | null) => value || "—" },
                 ]
               : []),
             {
@@ -239,6 +249,29 @@ export default function References() {
           >
             <Input maxLength={120} />
           </Form.Item>
+          {kind === "oil" && (
+            <>
+              <Form.Item name="oil_category" label={t("oilCategory")}>
+                <Input maxLength={80} placeholder={t("oilCategoryPlaceholder")} />
+              </Form.Item>
+              <Form.Item name="specification" label={t("oilSpecification")}>
+                <Input maxLength={160} placeholder={t("oilSpecificationPlaceholder")} />
+              </Form.Item>
+              <Form.Item
+                name="unit"
+                label={t("measurementUnit")}
+                rules={[{ required: true, whitespace: true, message: t("required") }]}
+              >
+                <Input maxLength={20} />
+              </Form.Item>
+              <Form.Item name="reference_sale_price" label={t("referenceSalePrice")}>
+                <InputNumber<string> stringMode min="0" precision={4} style={{ width: "100%" }} placeholder={t("referencePricePlaceholder")} />
+              </Form.Item>
+              <Form.Item name="reference_cost_price" label={t("referenceCostPrice")}>
+                <InputNumber<string> stringMode min="0" precision={4} style={{ width: "100%" }} placeholder={t("referencePricePlaceholder")} />
+              </Form.Item>
+            </>
+          )}
           {["customer", "supplier"].includes(kind) && (
             <>
               <Form.Item name="email" label={t("email")} rules={[{ type: "email" }]}>
@@ -267,6 +300,11 @@ export default function References() {
           >
             <Switch />
           </Form.Item>
+          {kind === "oil" && (
+            <Form.Item name="note" label={t("note")}>
+              <Input.TextArea rows={4} maxLength={1000} placeholder={t("oilNotePlaceholder")} />
+            </Form.Item>
+          )}
           <Space>
             <Button type="primary" htmlType="submit" loading={busy}>
               {t("save")}

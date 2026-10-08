@@ -83,7 +83,17 @@ export interface Account {
   name: string;
   account_type: "bank" | "cash" | "other";
   currency: "USD" | "CNY" | "HKD" | "SGD" | "EUR";
+  beneficiary_name: string;
+  bank_account_number: string;
+  bank_name: string;
+  branch_name: string;
+  bank_address: string;
+  swift_code: string;
+  iban: string;
+  bank_code: string;
+  bank_phone: string;
   opening_balance: string;
+  opening_exchange_rate: string;
   balance: string;
   share: string | null;
   is_default: boolean;

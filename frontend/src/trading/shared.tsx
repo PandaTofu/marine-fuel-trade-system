@@ -162,7 +162,7 @@ export function ReferenceInput({
     .map((row) => ({
       value: row.name,
       referenceId: row.id,
-      label: `${row.code} · ${row.name}`,
+      label: `${row.code} · ${row.name}${kind === "oil" && row.specification ? ` · ${row.specification}` : ""}`,
     }));
   return (
     <div>

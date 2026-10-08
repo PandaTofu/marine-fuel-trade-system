@@ -14,6 +14,7 @@ from .services import command, save_order, save_account, delete_account, account
 from .calculations import FINANCIAL_ORDER_STATES, EXCLUDED_ORDER_STATES, text, ZERO
 from .exports import workbook
 from .documents import invoice_pdf, contract_pdf, document_defaults
+from .order_imports import import_orders, prepare_import, result_payload
 
 
 def validated(serializer_class, data):
@@ -107,6 +108,19 @@ def orders(request):
         return Response(command(request, 'order.create', lambda: save_order(request.user, request.data)), status=201)
     rows = order_rows(request.query_params, request.user)
     return Response({**page(rows, request.query_params), 'summary':summary(rows)})
+
+
+@api_view(['POST'])
+def orders_import(request):
+    require_admin(request.user)
+    uploaded = request.FILES.get('file')
+    if not uploaded or not uploaded.name.lower().endswith('.xlsx') or uploaded.size > 20 * 1024 * 1024:
+        raise BusinessError('invalid_order_workbook')
+    content = uploaded.read()
+    if str(request.data.get('confirm', '')).lower() == 'true':
+        return Response(import_orders(content, request.user), status=201)
+    rows, orphan_count = prepare_import(content)
+    return Response(result_payload(rows, orphan_count))
 
 
 @api_view(['GET','PATCH'])

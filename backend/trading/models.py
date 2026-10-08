@@ -30,7 +30,17 @@ class Account(models.Model):
     name = models.CharField(max_length=120, unique=True)
     account_type = models.CharField(max_length=12, choices=TYPES, default='bank')
     currency = models.CharField(max_length=3, choices=CURRENCIES, default='USD')
+    beneficiary_name = models.CharField(max_length=160, blank=True)
+    bank_account_number = models.CharField(max_length=100, blank=True)
+    bank_name = models.CharField(max_length=160, blank=True)
+    branch_name = models.CharField(max_length=160, blank=True)
+    bank_address = models.CharField(max_length=300, blank=True)
+    swift_code = models.CharField(max_length=40, blank=True)
+    iban = models.CharField(max_length=80, blank=True)
+    bank_code = models.CharField(max_length=40, blank=True)
+    bank_phone = models.CharField(max_length=60, blank=True)
     opening_balance = models.DecimalField(max_digits=18, decimal_places=2, default=0)
+    opening_exchange_rate = models.DecimalField(max_digits=18, decimal_places=6, default=1)
     is_default = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
     note = models.CharField(max_length=1000, blank=True)
@@ -40,13 +50,14 @@ class Account(models.Model):
         ordering = ['id']
         constraints = [
             models.CheckConstraint(condition=models.Q(opening_balance__gte=0), name='trading_opening_nonnegative'),
+            models.CheckConstraint(condition=models.Q(opening_exchange_rate__gt=0), name='trading_exchange_rate_positive'),
             models.UniqueConstraint(fields=['is_default'], condition=models.Q(is_default=True), name='trading_single_default_account'),
         ]
 
 
 class Order(models.Model):
     public_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
-    number = models.CharField(max_length=13, unique=True, editable=False)
+    number = models.CharField(max_length=20, unique=True, editable=False)
     order_date = models.DateField()
     customer = models.CharField(max_length=160)
     customer_reference = models.ForeignKey(Reference, related_name='customer_orders', null=True, blank=True, on_delete=models.PROTECT)

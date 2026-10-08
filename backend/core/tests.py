@@ -146,6 +146,22 @@ class FoundationTests(TestCase):
         self.assertEqual(c.post('/api/reference/',payload,format='json').status_code,400)
         self.assertEqual(c.post('/api/reference/',{'kind':'unknown','name':'x'},format='json').status_code,400)
 
+    def test_oil_reference_fields_are_persisted_and_default_to_mt(self):
+        c = self.client_for()
+        response = c.post('/api/reference/', {
+            'kind': 'oil', 'name': 'IFO 380', 'oil_category': '重油',
+            'specification': '380 cSt / 0.5S', 'reference_sale_price': '620.5000',
+            'reference_cost_price': '600.2500', 'note': '测试要求',
+        }, format='json')
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.json()['unit'], 'MT')
+        self.assertEqual(response.json()['oil_category'], '重油')
+        self.assertEqual(response.json()['reference_sale_price'], '620.5000')
+        invalid = c.post('/api/reference/', {
+            'kind': 'oil', 'name': 'Negative price', 'reference_sale_price': '-1',
+        }, format='json')
+        self.assertEqual(invalid.status_code, 400)
+
     def test_audit_failure_rolls_back_reference(self):
         c = self.client_for()
         with patch('core.views.audit',side_effect=RuntimeError('test atomic rollback')):

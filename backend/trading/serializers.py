@@ -94,9 +94,18 @@ class AccountSerializer(serializers.ModelSerializer):
         model = Account
         fields = '__all__'
         read_only_fields = ['version']
-        extra_kwargs = {'opening_balance': {'min_value': Decimal(0)}}
+        extra_kwargs = {
+            'opening_balance': {'min_value': Decimal(0)},
+            'opening_exchange_rate': {'min_value': Decimal('0.000001')},
+        }
         # Conditional uniqueness is maintained atomically when changing the default.
         validators = []
+
+    def validate(self, attrs):
+        currency = attrs.get('currency', getattr(self.instance, 'currency', 'USD'))
+        if currency == 'USD':
+            attrs['opening_exchange_rate'] = Decimal('1')
+        return attrs
 
 class SettlementSerializer(serializers.Serializer):
     version = serializers.IntegerField(min_value=1)

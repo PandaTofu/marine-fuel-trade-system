@@ -92,6 +92,28 @@
   gap: 0 18px;
   margin-top: 20px;
 }
+.account-editor-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 24px;
+}
+.account-editor-full {
+  grid-column: 1 / -1;
+}
+.account-editor-three {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0 24px;
+}
+.account-name-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.account-name-cell > span {
+  color: #718391;
+  font-size: 12px;
+}
 .business-form-grid .ant-input-number {
   width: 100%;
 }
@@ -778,6 +800,10 @@
   }
 }
 @media (max-width: 480px) {
+  .account-editor-grid,
+  .account-editor-three {
+    grid-template-columns: 1fr;
+  }
   .business-form-grid,
   .business-detail {
     grid-template-columns: 1fr;

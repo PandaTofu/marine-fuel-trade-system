@@ -24,6 +24,7 @@ from .calculations import state, totals, order_numbers
 from .models import Account, DocumentEmail, Entry, Mutation, Order, OrderAttachment, OrderDocument, OrderPurgeBackup, OrderRevision, WriteLock
 from .services import account_balance
 from .documents import PURCHASE_TERMS, SALES_TERMS
+from .exports import workbook
 
 
 def order_payload(supplied=True):
@@ -78,6 +79,44 @@ class TradingTests(TestCase):
         response=self.write('orders/',values or order_payload())
         self.assertEqual(response.status_code,201,response.data)
         return response.json()
+
+    def order_import_file(self):
+        summary_headers = ['订单编号', '订单日期', '客户名称', '船名', '港口', '供应商', '销售人员', '业务状态', '回款状态', '付款状态', '客户应收余额', '供应商应付余额', '销售总额', '供应商成本总额', '实际利润', '实际供货日期', '客户到期日', '供应商到期日', '油品明细数量', '油品名称汇总', '备注']
+        line_headers = ['订单编号', '订单日期', '客户名称', '船名', '供应商', '油品序号', '油品名称', '规格', '单位', '订单数量（区间）', '实际数量', '销售单价（USD/MT）', '销售金额（USD）', '供应商成本单价（USD/MT）', '供应商成本金额（USD）']
+        content = workbook([
+            ('订单汇总', [summary_headers, ['SO202610080001', '2026-10-08', 'Imported customer', 'MV Import', 'Singapore', 'Imported supplier', 'Alice', '已供油', '', '', '', '', '', '', '', '2026-10-09', '', '', 2, 'VLSFO / LSMGO', 'Imported note']]),
+            ('油品明细', [
+                line_headers,
+                ['SO202610080001', '2026-10-08', 'Imported customer', 'MV Import', 'Imported supplier', 1, 'VLSFO', '380 cSt', 'MT', '95-105', 100, 600, 60000, 560, 56000],
+                ['SO202610080001', '2026-10-08', 'Imported customer', 'MV Import', 'Imported supplier', 2, 'LSMGO', '', 'MT', 50, '', 700, '', 650, ''],
+            ]),
+        ])
+        return SimpleUploadedFile('orders.xlsx', content, content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+    def test_admin_previews_and_imports_order_workbook_with_oil_lines(self):
+        response = self.client.post('/api/trading/orders/import/', {'file': self.order_import_file()}, format='multipart')
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data['summary'], {'total': 1, 'ready': 1, 'duplicate': 0, 'invalid': 0, 'line_count': 2, 'orphan_lines': 0})
+        self.assertFalse(Order.objects.filter(number='SO202610080001').exists())
+
+        response = self.client.post('/api/trading/orders/import/', {'file': self.order_import_file(), 'confirm': 'true'}, format='multipart')
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data['created'], 1)
+        order = Order.objects.get(number='SO202610080001')
+        self.assertEqual(order.state, 'supplied')
+        self.assertEqual(order.lines.count(), 2)
+        self.assertEqual(order.lines.get(position=0).ordered_qty_min, Decimal('95'))
+        self.assertEqual(order.lines.get(position=0).ordered_qty_max, Decimal('105'))
+        self.assertEqual(OrderDocument.objects.filter(order=order).count(), 3)
+        self.assertEqual(order.revisions.get().action, 'imported')
+
+        duplicate = self.client.post('/api/trading/orders/import/', {'file': self.order_import_file()}, format='multipart')
+        self.assertEqual(duplicate.data['summary']['duplicate'], 1)
+
+    def test_operator_cannot_import_orders(self):
+        self.client.force_authenticate(self.operator)
+        response = self.client.post('/api/trading/orders/import/', {'file': self.order_import_file()}, format='multipart')
+        self.assertEqual(response.status_code, 403)
 
     def settle(self,order,**values):
         response=self.write(f"orders/{order['id']}/settlement/",{'version':order['version'],**values})
@@ -641,10 +680,18 @@ class TradingTests(TestCase):
         response=self.write(f"accounts/{second['id']}/",{'version':second['version'],'opening_balance':'200'},method='patch')
         self.assertEqual(response.json()['code'],'opening_locked')
         self.assertEqual(self.write(f"accounts/{second['id']}/",{'version':second['version']}).json()['code'],'account_has_entries')
-        response=self.write('accounts/',{'name':'CNY cash','account_type':'cash','currency':'CNY','opening_balance':'200.00'})
+        response=self.write('accounts/',{
+            'name':'CNY cash','account_type':'cash','currency':'CNY','opening_balance':'200.00',
+            'beneficiary_name':'Bond Shipping','bank_account_number':'622200001',
+            'bank_name':'Construction Bank','branch_name':'Tuen Mun Branch',
+            'bank_address':'Hong Kong','swift_code':'PCBCCNBJ','iban':'HK00TEST',
+            'bank_code':'105','bank_phone':'+852 0000 0000','opening_exchange_rate':'0.140000',
+        })
         self.assertEqual(response.status_code,201,response.data)
         self.assertEqual(response.json()['account_type'],'cash')
         self.assertEqual(response.json()['currency'],'CNY')
+        self.assertEqual(response.json()['bank_account_number'],'622200001')
+        self.assertEqual(response.json()['opening_exchange_rate'],'0.140000')
         self.assertFalse(response.json()['is_default'])
         self.assertEqual(Account.objects.filter(is_default=True).count(),1)
         response=self.client.get('/api/trading/accounts/').json()
