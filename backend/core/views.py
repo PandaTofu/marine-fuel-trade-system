@@ -16,6 +16,7 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.viewsets import ModelViewSet
 from .models import User, LoginGuard, Company, Reference, Audit
 from .serializers import UserSerializer, ReferenceSerializer, CompanySerializer
+from .reference_imports import import_references, prepare_import, result_payload
 
 
 def admin(request):
@@ -219,6 +220,18 @@ class References(ModelViewSet):
         except ProtectedError:
             return Response({'code': 'reference_in_use'}, status=409)
         return Response(status=204)
+
+    @action(detail=False, methods=['post'], url_path='import-data')
+    def import_data(self, request):
+        admin(request)
+        uploaded = request.FILES.get('file')
+        kind = str(request.data.get('kind', ''))
+        if not uploaded or uploaded.size > 2 * 1024 * 1024 or not uploaded.name.lower().endswith(('.txt', '.csv')):
+            raise ValidationError({'file': ['invalid_reference_file']})
+        content = uploaded.read()
+        if str(request.data.get('confirm', '')).lower() == 'true':
+            return Response(import_references(content, kind, request.user), status=201)
+        return Response(result_payload(prepare_import(content, kind)))
 
 
 @api_view(['GET', 'PATCH'])

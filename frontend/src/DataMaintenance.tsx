@@ -19,20 +19,24 @@ type MaintenanceData = {
   };
 };
 
-type OrderImportResult = {
+type ImportType = "orders" | "customer" | "supplier" | "oil";
+
+type ImportResult = {
   summary: {
     total: number;
     ready: number;
     duplicate: number;
     invalid: number;
-    line_count: number;
-    orphan_lines: number;
+    line_count?: number;
+    orphan_lines?: number;
   };
   rows: Array<{
-    number: string;
+    number?: string;
+    name?: string;
+    source_code?: string;
     result: "ready" | "duplicate" | "invalid";
     errors: string[];
-    line_count: number;
+    line_count?: number;
   }>;
   created?: number;
 };
@@ -45,9 +49,9 @@ export default function DataMaintenance() {
   const command = useCommand();
   const [open, setOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
-  const [importType] = useState("orders");
+  const [importType, setImportType] = useState<ImportType>("orders");
   const [importFile, setImportFile] = useState<File | null>(null);
-  const [importPreview, setImportPreview] = useState<OrderImportResult | null>(null);
+  const [importPreview, setImportPreview] = useState<ImportResult | null>(null);
   const [importBusy, setImportBusy] = useState(false);
   const [importError, setImportError] = useState("");
   const [form] = Form.useForm();
@@ -56,6 +60,13 @@ export default function DataMaintenance() {
   if (user?.role !== "admin") return <Navigate to="/app" replace />;
 
   const latest = resource.data?.latest_backup;
+  const isOrderImport = importType === "orders";
+  const importEndpoint = isOrderImport ? "trading/orders/import/" : "reference/import-data/";
+  const resetImportFile = () => {
+    setImportFile(null);
+    setImportPreview(null);
+    setImportError("");
+  };
   const inspectImport = async (file: File) => {
     setImportFile(file);
     setImportPreview(null);
@@ -64,7 +75,8 @@ export default function DataMaintenance() {
     try {
       const data = new FormData();
       data.append("file", file);
-      setImportPreview(await uploadApi<OrderImportResult>("trading/orders/import/", data));
+      if (!isOrderImport) data.append("kind", importType);
+      setImportPreview(await uploadApi<ImportResult>(importEndpoint, data));
     } catch (error) {
       setImportError((error as Error).message);
     } finally {
@@ -79,8 +91,9 @@ export default function DataMaintenance() {
       const data = new FormData();
       data.append("file", importFile);
       data.append("confirm", "true");
-      const result = await uploadApi<OrderImportResult>("trading/orders/import/", data);
-      message.success(t("biz.orderImportCreated", { count: result.created || 0 }));
+      if (!isOrderImport) data.append("kind", importType);
+      const result = await uploadApi<ImportResult>(importEndpoint, data);
+      message.success(t("biz.dataImportCreated", { count: result.created || 0 }));
       setImportOpen(false);
       setImportFile(null);
       setImportPreview(null);
@@ -109,13 +122,20 @@ export default function DataMaintenance() {
           <Select
             value={importType}
             aria-label={t("biz.importDataType")}
-            options={[{ value: "orders", label: t("biz.orderData") }]}
+            onChange={(value: ImportType) => {
+              setImportType(value);
+              resetImportFile();
+            }}
+            options={(["orders", "customer", "supplier", "oil"] as ImportType[]).map((value) => ({
+              value,
+              label: t(`biz.importType_${value}`),
+            }))}
           />
           <Button type="primary" icon={<UploadOutlined />} onClick={() => setImportOpen(true)}>
             {t("biz.startImport")}
           </Button>
         </div>
-        <Alert type="info" showIcon message={t("biz.futureImportTypes")} />
+        <Alert type="info" showIcon message={t("biz.supportedImportTypes")} />
       </Card>
       {resource.loading && !resource.data ? (
         <Spin />
@@ -162,7 +182,7 @@ export default function DataMaintenance() {
       <Modal
         open={importOpen}
         width={760}
-        title={t("biz.importOrders")}
+        title={t(`biz.importTitle_${importType}`)}
         okText={t("biz.confirmImport")}
         cancelText={t("biz.cancel")}
         confirmLoading={importBusy}
@@ -172,14 +192,12 @@ export default function DataMaintenance() {
         onCancel={() => {
           if (importBusy) return;
           setImportOpen(false);
-          setImportFile(null);
-          setImportPreview(null);
-          setImportError("");
+          resetImportFile();
         }}
       >
-        <Alert type="info" showIcon message={t("biz.orderImportHint")} />
+        <Alert type="info" showIcon message={t(`biz.importHint_${importType}`)} />
         <Upload
-          accept=".xlsx"
+          accept={isOrderImport ? ".xlsx" : ".txt,.csv"}
           maxCount={1}
           showUploadList
           beforeUpload={(file) => {
@@ -187,12 +205,11 @@ export default function DataMaintenance() {
             return false;
           }}
           onRemove={() => {
-            setImportFile(null);
-            setImportPreview(null);
+            resetImportFile();
           }}
         >
           <Button loading={importBusy} icon={<UploadOutlined />} style={{ marginTop: 16 }}>
-            {t("biz.selectOrderWorkbook")}
+            {t("biz.selectImportFile")}
           </Button>
         </Upload>
         <ErrorBox error={importError} />
@@ -201,17 +218,24 @@ export default function DataMaintenance() {
             <Alert
               style={{ margin: "16px 0" }}
               type={importPreview.summary.invalid ? "warning" : "success"}
-              message={t("biz.orderImportSummary", importPreview.summary)}
+              message={t(isOrderImport ? "biz.orderImportSummary" : "biz.referenceImportSummary", importPreview.summary)}
               description={importPreview.summary.orphan_lines ? t("biz.orderImportOrphans", { count: importPreview.summary.orphan_lines }) : undefined}
             />
             <Table
               size="small"
-              rowKey={(row) => `${row.number}-${row.result}`}
+              rowKey={(row) => `${row.number || row.source_code || row.name}-${row.result}`}
               pagination={{ pageSize: 8 }}
               dataSource={importPreview.rows}
               columns={[
-                { title: t("biz.number"), dataIndex: "number" },
-                { title: t("biz.productDetails"), dataIndex: "line_count", width: 100 },
+                ...(isOrderImport
+                  ? [
+                      { title: t("biz.number"), dataIndex: "number" },
+                      { title: t("biz.productDetails"), dataIndex: "line_count", width: 100 },
+                    ]
+                  : [
+                      { title: t("biz.sourceCode"), dataIndex: "source_code", width: 150 },
+                      { title: t("biz.name"), dataIndex: "name" },
+                    ]),
                 { title: t("biz.importResult"), dataIndex: "result", width: 120, render: (value: string) => t(`biz.import_${value}`) },
                 { title: t("biz.importIssues"), dataIndex: "errors", render: (values: string[]) => values.length ? values.map((value) => t(`biz.${value}`)).join("；") : "—" },
               ]}

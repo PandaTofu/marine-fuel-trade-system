@@ -2,6 +2,7 @@ from datetime import timedelta
 from unittest.mock import patch
 from django.test import TestCase
 from django.utils import timezone
+from django.core.files.uploadedfile import SimpleUploadedFile
 from rest_framework.test import APIClient
 from .models import User, Reference, Audit, Company, LoginGuard
 
@@ -161,6 +162,37 @@ class FoundationTests(TestCase):
             'kind': 'oil', 'name': 'Negative price', 'reference_sale_price': '-1',
         }, format='json')
         self.assertEqual(invalid.status_code, 400)
+
+    def test_admin_previews_and_imports_reference_files(self):
+        client = self.client_for()
+        cases = {
+            'customer': '客户编号\t客户名称\t状态\t邮箱账号\nCU001\tCustomer A\t合作中\tbuyer@example.com\n',
+            'supplier': 'SU001\t\nSupplier A\n未设置联系人\n合作中\n',
+            'oil': 'PR001\t\nVLSFO\n未分类\nMT\n',
+        }
+        for kind, text in cases.items():
+            upload = lambda: SimpleUploadedFile(f'{kind}.txt', text.encode('utf-8'), content_type='text/plain')
+            preview = client.post('/api/reference/import-data/', {'kind': kind, 'file': upload()}, format='multipart')
+            self.assertEqual(preview.status_code, 200, preview.data)
+            self.assertEqual(preview.data['summary']['ready'], 1)
+            self.assertFalse(Reference.objects.filter(kind=kind).exists())
+            imported = client.post('/api/reference/import-data/', {'kind': kind, 'file': upload(), 'confirm': 'true'}, format='multipart')
+            self.assertEqual(imported.status_code, 201, imported.data)
+            self.assertEqual(imported.data['created'], 1)
+        customer = Reference.objects.get(kind='customer')
+        self.assertEqual(customer.email, 'buyer@example.com')
+        self.assertTrue(customer.is_active)
+        self.assertEqual(Reference.objects.get(kind='oil').unit, 'MT')
+        duplicate = client.post('/api/reference/import-data/', {
+            'kind': 'supplier',
+            'file': SimpleUploadedFile('supplier.txt', cases['supplier'].encode(), content_type='text/plain'),
+        }, format='multipart')
+        self.assertEqual(duplicate.data['summary']['duplicate'], 1)
+
+    def test_operator_cannot_import_reference_files(self):
+        client = self.client_for('operator')
+        uploaded = SimpleUploadedFile('supplier.txt', b'SU001\nSupplier A\n', content_type='text/plain')
+        self.assertEqual(client.post('/api/reference/import-data/', {'kind': 'supplier', 'file': uploaded}, format='multipart').status_code, 403)
 
     def test_audit_failure_rolls_back_reference(self):
         c = self.client_for()
