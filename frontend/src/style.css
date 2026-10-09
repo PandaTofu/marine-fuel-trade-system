@@ -493,6 +493,41 @@ a:focus-visible {
   padding-top: 15px;
   border-top: 1px solid #ffffff15;
 }
+.data-import-card {
+  margin-bottom: 20px;
+}
+.data-import-entry {
+  display: grid;
+  grid-template-columns: auto minmax(260px, 1fr) 190px auto;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+.data-import-icon {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  color: #087d91;
+  background: #e7f6f8;
+  font-size: 22px;
+}
+.data-import-copy p {
+  margin: 4px 0 0;
+  color: #6f8593;
+  line-height: 1.6;
+}
+@media (max-width: 900px) {
+  .data-import-entry {
+    grid-template-columns: auto 1fr;
+  }
+  .data-import-entry .ant-select,
+  .data-import-entry .ant-btn {
+    grid-column: 2;
+    width: 100%;
+  }
+}
 .status-dot {
   display: inline-block;
   width: 6px;

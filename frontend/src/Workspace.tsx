@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Button, Card, Menu, Spin, Tag } from "antd";
 import {
-  AppstoreOutlined,
+  BarChartOutlined,
   DatabaseOutlined,
   BookOutlined,
   ExperimentOutlined,
@@ -14,6 +14,7 @@ import {
   SafetyOutlined,
   LogoutOutlined,
   ArrowRightOutlined,
+  DollarCircleOutlined,
 } from "@ant-design/icons";
 import { Navigate, Outlet, Link, useLocation } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -40,9 +41,9 @@ export default function Workspace() {
   if (!user) return <Navigate to="/login" replace />;
   const item = (path: string, label: string, icon: ReactNode) => ({key:path,icon,label:<Link to={path}>{t(label)}</Link>});
   const menu = [
-    item("/app", "overview", <AppstoreOutlined />),
+    item("/app", "overview", <BarChartOutlined />),
     item("/app/orders", "biz.orders", <DatabaseOutlined />),
-    item("/app/settlements", "biz.settlements", <AppstoreOutlined />),
+    item("/app/settlements", "biz.settlements", <DollarCircleOutlined />),
     item("/app/funds", "biz.funds", <DatabaseOutlined />),
     {key:"reference-root",icon:<BookOutlined/>,label:t("references"),children:[
       item("/app/reference/customer","customerManagement",<TeamOutlined/>),
