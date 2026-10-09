@@ -70,8 +70,6 @@ export default function Workspace() {
           items={menu}
         />
         <div className="sidebar-foot">
-          <span className="status-dot" />
-          {t("phase")}
           <Link to="/">{t("home")} ↗</Link>
         </div>
       </aside>

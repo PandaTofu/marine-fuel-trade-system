@@ -417,20 +417,28 @@ a:focus-visible {
   flex-direction: column;
 }
 .sidebar .brand {
+  flex-direction: column;
+  justify-content: center;
   font-size: 18px;
   letter-spacing: 1px;
   margin: 0 12px;
+  text-align: center;
+  white-space: normal;
+}
+.sidebar .brand > span:last-child {
+  width: 100%;
+  overflow-wrap: anywhere;
 }
 .sidebar .brand-logo {
-  width: 78px;
-  height: 54px;
-  flex-basis: 78px;
+  width: 112px;
+  height: 72px;
+  flex-basis: 72px;
 }
 .sidebar-caption {
   font-size: 9px;
   letter-spacing: 2px;
   color: #708e9f;
-  margin: 45px 15px 15px;
+  margin: 28px 15px 15px;
 }
 .sidebar .ant-menu {
   background: transparent;
@@ -482,8 +490,7 @@ a:focus-visible {
 }
 .sidebar-foot a {
   display: block;
-  margin-top: 20px;
-  padding-top: 20px;
+  padding-top: 15px;
   border-top: 1px solid #ffffff15;
 }
 .status-dot {
