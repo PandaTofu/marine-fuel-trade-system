@@ -67,69 +67,164 @@ export function DocumentEditor({
     </Form.Item>
   );
   const contractFields = [
-    "reference", "date", "document_title", "vessel", "imo", "port", "eta", "buyer", "seller", "supplier",
+    "reference",
+    "date",
+    "document_title",
+    "vessel",
+    "imo",
+    "port",
+    "eta",
+    "buyer",
+    "seller",
   ];
   const invoiceFields = [
-    "reference_number", "invoice_number", "customer", "vessel", "imo", "port",
-    "invoice_date", "delivery_date", "due_date", "customer_reference",
+    "reference_number",
+    "invoice_number",
+    "customer",
+    "customer_address",
+    "vessel",
+    "imo",
+    "port",
+    "invoice_date",
+    "delivery_date",
+    "due_date",
+    "customer_reference",
   ];
   const bankFields = [
-    "currency", "beneficiary_name", "beneficiary_address", "bank_name",
-    "account_number", "swift", "bank_address", "remittance_reference",
+    "currency",
+    "beneficiary_name",
+    "beneficiary_address",
+    "bank_name",
+    "account_number",
+    "swift",
+    "bank_address",
+    "remittance_reference",
   ];
 
   return (
     <Modal
       open
       width={960}
-      title={<Space>{t(kind === "invoice" ? "biz.issueInvoice" : kind === "purchase_contract" ? "biz.purchaseContract" : "biz.salesContract")}<Language /></Space>}
+      title={
+        <Space>
+          {t(
+            kind === "invoice"
+              ? "biz.issueInvoice"
+              : kind === "purchase_contract"
+                ? "biz.purchaseContract"
+                : "biz.salesContract",
+          )}
+          <Language />
+        </Space>
+      }
       onCancel={onClose}
       footer={null}
       destroyOnHidden
     >
       <ErrorBox error={error} />
-      {loading ? <Spin /> : (
+      {loading ? (
+        <Spin />
+      ) : (
         <Form form={form} layout="vertical">
           {metadata?.updated_at && (
-            <p className="muted">{t("biz.lastDocumentEdit", { user: metadata.updated_by, time: metadata.updated_at })}</p>
+            <p className="muted">
+              {t("biz.lastDocumentEdit", {
+                user: metadata.updated_by,
+                time: metadata.updated_at,
+              })}
+            </p>
           )}
           <div className="business-form-grid adaptive">
-            {(kind !== "invoice" ? contractFields : invoiceFields).map((field) => text(field))}
+            {(kind !== "invoice" ? contractFields : invoiceFields).map(
+              (field) => text(field),
+            )}
           </div>
+          {kind === "purchase_contract" && text("physical_supplier")}
           {kind !== "invoice" && text("intro", 2)}
           <Form.List name="products">
             {(fields, { add, remove }) => (
               <>
                 {fields.map(({ key, name }) => (
                   <div className="business-form-grid adaptive" key={key}>
-                    <Form.Item name={[name, "name"]} label={t("biz.oil")}><Input /></Form.Item>
-                    <Form.Item name={[name, "quantity"]} label={t("biz.quantity")}><Input /></Form.Item>
-                    {kind === "invoice" && <Form.Item name={[name, "unit"]} label={t("biz.unit")}><Input /></Form.Item>}
-                    <Form.Item name={[name, "unit_price"]} label={t("biz.sale_price")}><Input /></Form.Item>
-                    <Form.Item name={[name, "amount"]} label={t("biz.sale_amount")}><Input /></Form.Item>
-                    <Button type="text" danger icon={<MinusCircleOutlined />} onClick={() => remove(name)} />
+                    <Form.Item name={[name, "name"]} label={t("biz.oil")}>
+                      <Input />
+                    </Form.Item>
+                    {kind !== "invoice" && (
+                      <Form.Item
+                        name={[name, "specification"]}
+                        label={t("biz.specification")}
+                      >
+                        <Input />
+                      </Form.Item>
+                    )}
+                    <Form.Item
+                      name={[name, "quantity"]}
+                      label={t("biz.quantity")}
+                    >
+                      <Input />
+                    </Form.Item>
+                    {kind === "invoice" && (
+                      <Form.Item name={[name, "unit"]} label={t("biz.unit")}>
+                        <Input />
+                      </Form.Item>
+                    )}
+                    <Form.Item
+                      name={[name, "unit_price"]}
+                      label={t("biz.sale_price")}
+                    >
+                      <Input />
+                    </Form.Item>
+                    <Form.Item
+                      name={[name, "amount"]}
+                      label={t("biz.sale_amount")}
+                    >
+                      <Input />
+                    </Form.Item>
+                    <Button
+                      type="text"
+                      danger
+                      icon={<MinusCircleOutlined />}
+                      onClick={() => remove(name)}
+                    />
                   </div>
                 ))}
-                <Button icon={<PlusOutlined />} onClick={() => add()}>{t("biz.addLine")}</Button>
+                <Button icon={<PlusOutlined />} onClick={() => add()}>
+                  {t("biz.addLine")}
+                </Button>
               </>
             )}
           </Form.List>
           {kind !== "invoice" ? (
             <>
-              {text("total")}
               {text("additional_cost", 3)}
               {text("payment", 2)}
+              {text("remarks", 3)}
               {text("terms", 7)}
               {text("closing", 4)}
             </>
           ) : (
-            <div className="business-form-grid adaptive">
-              {bankFields.map((field) => text(field))}
-            </div>
+            <>
+              <div className="business-form-grid adaptive">
+                {text("payment_instructions")}
+                {text("vat_rate")}
+                {bankFields.map((field) => text(field))}
+              </div>
+              {text("late_payment_terms", 2)}
+              {text("bank_charge_terms", 2)}
+              {text("fraud_prevention", 2)}
+            </>
           )}
           <Space className="spaced">
-            <Button type="primary" loading={saving} onClick={() => void save(false)}>{t("save")}</Button>
-            <Button loading={saving} onClick={() => void save(true)}>{t("biz.saveAndDownload")}</Button>
+            <Button
+              type="primary"
+              loading={saving}
+              onClick={() => void save(false)}
+            >
+              {t("save")}
+            </Button>
+            <Button loading={saving} onClick={() => void save(true)}>
+              {t("biz.saveAndDownload")}
+            </Button>
             <Button onClick={onClose}>{t("cancel")}</Button>
           </Space>
         </Form>

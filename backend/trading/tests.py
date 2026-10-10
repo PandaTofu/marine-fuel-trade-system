@@ -132,9 +132,9 @@ class TradingTests(TestCase):
             self.assertIn(f'{kind}_',response['Content-Disposition'])
             self.assertTrue(response.content.startswith(b'%PDF-'))
             self.assertGreater(len(response.content),1000)
-        self.assertEqual(len(SALES_TERMS),5)
+        self.assertGreaterEqual(len(SALES_TERMS), 10)
         self.assertTrue(all(term.strip() for term in SALES_TERMS))
-        self.assertEqual(len(PURCHASE_TERMS),4)
+        self.assertGreaterEqual(len(PURCHASE_TERMS), 5)
 
     def test_order_attachment_upload_replaces_same_kind_and_rejects_non_pdf(self):
         order = self.create_order()
@@ -178,6 +178,8 @@ class TradingTests(TestCase):
         path = f"/api/trading/orders/{order['id']}/documents/sales_contract/"
         defaults = self.client.get(path).json()['content']
         self.assertEqual(defaults['reference'], f"{order['number']}-SC")
+        self.assertIn('specification', defaults['products'][0])
+        self.assertIn('remarks', defaults)
         defaults['buyer'] = 'Edited PDF buyer only'
         defaults['terms'] = 'Term one\nTerm two'
         response = self.client.put(path, {'content': defaults}, format='json')
@@ -186,6 +188,16 @@ class TradingTests(TestCase):
         self.assertEqual(Order.objects.get(pk=order['id']).customer, '客户 A')
         self.assertEqual(self.client.get(path).json()['content']['buyer'], 'Edited PDF buyer only')
         self.assertTrue(self.client.get(f"/api/trading/orders/{order['id']}/sales_contract/").content.startswith(b'%PDF-'))
+
+        invoice_path = f"/api/trading/orders/{order['id']}/documents/invoice/"
+        invoice = OrderDocument.objects.get(order_id=order['id'], kind='invoice')
+        invoice.content = {'invoice_number': 'LEGACY-INVOICE'}
+        invoice.save(update_fields=['content'])
+        merged = self.client.get(invoice_path).json()['content']
+        self.assertEqual(merged['invoice_number'], 'LEGACY-INVOICE')
+        self.assertIn('customer_address', merged)
+        self.assertIn('payment_instructions', merged)
+        self.assertIn('vat_rate', merged)
 
         changed = order_payload(False)
         changed.update(version=order['version'], customer='更新后的订单客户')

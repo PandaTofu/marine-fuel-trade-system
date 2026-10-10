@@ -13,7 +13,7 @@ from .serializers import OrderSerializer, EntrySerializer, SettlementSerializer,
 from .services import command, save_order, save_account, delete_account, account_data, account_balance, locked_order, settle, refund, manual_entry, reverse_entry, close_order, purge_all_orders, require_admin, BusinessError
 from .calculations import FINANCIAL_ORDER_STATES, EXCLUDED_ORDER_STATES, text, ZERO
 from .exports import workbook
-from .documents import invoice_pdf, contract_pdf, document_defaults
+from .documents import invoice_pdf, contract_pdf, document_defaults, merge_document_content
 from .order_imports import import_orders, prepare_import, result_payload
 
 
@@ -313,7 +313,7 @@ def order_document_content(request, pk, kind):
         last_email = saved.emails.filter(status='sent').first() if saved else None
         return Response({
             'kind': kind,
-            'content': saved.content if saved else document_defaults(row, kind),
+            'content': merge_document_content(document_defaults(row, kind), saved.content if saved else None),
             'updated_at': saved.updated_at.isoformat() if saved else None,
             'updated_by': saved.updated_by.username if saved else None,
             'last_sent_at': last_email.sent_at.isoformat() if last_email else None,

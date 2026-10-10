@@ -87,3 +87,7 @@ const settlementUpdateZh={customer_fee_delta:'银行手续费',supplier_fee_delt
 const settlementUpdateEn:typeof settlementUpdateZh={customer_fee_delta:'Bank fee',supplier_fee_delta:'Bank fee',customerFeeThisTime:'Bank fee',supplierFeeThisTime:'Bank fee',changeSummary:'Changes',orderEditHint:'The edit reason is optional. A reason is required when voiding an order.',settlementHint:'Receipt and payment amounts are cumulative. Fees entered this time are added to the order. Reducing a posted amount is a correction and requires a reason.'};
 i18n.addResourceBundle('zh-CN','translation',{biz:settlementUpdateZh},true,true);
 i18n.addResourceBundle('en','translation',{biz:settlementUpdateEn},true,true);
+const documentTemplateZh={customer_address:'客户地址',payment_instructions:'付款方式',vat_rate:'增值税率（%）',late_payment_terms:'逾期付款条款',bank_charge_terms:'银行手续费条款',fraud_prevention:'防诈骗提示',physical_supplier:'实际供油商',remarks:'备注',specification:'规格'};
+const documentTemplateEn:typeof documentTemplateZh={customer_address:'Customer address',payment_instructions:'Payment instructions',vat_rate:'VAT rate (%)',late_payment_terms:'Late payment terms',bank_charge_terms:'Bank charge terms',fraud_prevention:'Fraud prevention notice',physical_supplier:'Physical supplier',remarks:'Remarks',specification:'Specification'};
+i18n.addResourceBundle('zh-CN','translation',{biz:documentTemplateZh},true,true);
+i18n.addResourceBundle('en','translation',{biz:documentTemplateEn},true,true);
