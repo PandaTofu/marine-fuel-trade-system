@@ -210,8 +210,9 @@ def order_document(request, pk, kind):
     if kind not in ('invoice', 'purchase_contract', 'sales_contract'):
         raise BusinessError('not_found', 404)
     content = invoice_pdf(row, document_content) if kind == 'invoice' else contract_pdf(row, document_content, kind)
+    suffix = {'invoice': 'INV', 'sales_contract': 'SC', 'purchase_contract': 'PC'}[kind]
     response = HttpResponse(content, content_type='application/pdf')
-    response['Content-Disposition'] = f'attachment; filename="{kind}_{row.number}.pdf"'
+    response['Content-Disposition'] = f'attachment; filename="{row.number}-{suffix}.pdf"'
     return response
 
 
@@ -337,7 +338,7 @@ def document_email_defaults(order, document):
     party = (order.supplier_reference if order.supplier_reference_id else None) if purchase else (order.customer_reference if order.customer_reference_id else None)
     recipients = [party.email] if party and party.email else []
     suffix = 'INV' if invoice else ('PC' if purchase else 'SC')
-    number = str(content.get('invoice_number' if invoice else 'reference') or f'{order.number}-{suffix}')
+    number = f'{order.number}-{suffix}'
     attachment_stem = ''.join(character if character.isalnum() or character in '._-' else '_' for character in number)[:160]
     if invoice:
         subject = f'Invoice {number} – {order.vessel} – {company_name}'

@@ -185,6 +185,26 @@
 .order-detail-page-header .order-modal-title {
   padding-right: 0;
 }
+.order-detail-tabs > .ant-tabs-nav .ant-tabs-tab {
+  margin: 0 6px 0 0;
+  padding: 8px 15px;
+  border-radius: 9px;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+.order-detail-tabs > .ant-tabs-nav .ant-tabs-tab:hover {
+  background: #eef6fc;
+}
+.order-detail-tabs > .ant-tabs-nav .ant-tabs-tab-active {
+  background: #dceeff;
+  box-shadow: inset 0 0 0 1px #acd4f5;
+}
+.order-detail-tabs > .ant-tabs-nav .ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: #0663ad;
+  font-weight: 650;
+}
+.order-detail-tabs > .ant-tabs-nav .ant-tabs-ink-bar {
+  display: none;
+}
 .order-detail-hero {
   display: flex;
   align-items: center;

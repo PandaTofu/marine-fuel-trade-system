@@ -125,11 +125,12 @@ class TradingTests(TestCase):
 
     def test_invoice_and_contract_pdf_downloads(self):
         order=self.create_order()
-        for kind in ['invoice','purchase_contract','sales_contract']:
+        suffixes = {'invoice': 'INV', 'purchase_contract': 'PC', 'sales_contract': 'SC'}
+        for kind, suffix in suffixes.items():
             response=self.client.get(f"/api/trading/orders/{order['id']}/{kind}/")
             self.assertEqual(response.status_code,200)
             self.assertEqual(response['Content-Type'],'application/pdf')
-            self.assertIn(f'{kind}_',response['Content-Disposition'])
+            self.assertIn(f'{order["number"]}-{suffix}.pdf', response['Content-Disposition'])
             self.assertTrue(response.content.startswith(b'%PDF-'))
             self.assertGreater(len(response.content),1000)
         self.assertGreaterEqual(len(SALES_TERMS), 10)

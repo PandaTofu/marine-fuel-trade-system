@@ -466,7 +466,12 @@ export async function downloadOrderDocument(
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `${kind}_${orderId}.pdf`;
+  const disposition = res.headers.get("Content-Disposition") || "";
+  const encodedName = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+  const plainName = disposition.match(/filename="?([^";]+)"?/i)?.[1];
+  a.download = encodedName
+    ? decodeURIComponent(encodedName)
+    : plainName || `${kind}_${orderId}.pdf`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

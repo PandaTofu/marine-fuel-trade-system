@@ -1235,10 +1235,7 @@ export function OrderDetail({
     const invoice = kind === "invoice";
     const purchase = kind === "purchase_contract";
     const updatedAt = resource.data?.updated_at;
-    const number = String(
-      resource.data?.content[invoice ? "invoice_number" : "reference"] ||
-        `${order.number}-${invoice ? "INV" : purchase ? "PC" : "SC"}`,
-    );
+    const number = `${order.number}-${invoice ? "INV" : purchase ? "PC" : "SC"}`;
     return (
       <article className="order-document-row">
         <div className="order-document-info">
@@ -1305,6 +1302,7 @@ export function OrderDetail({
   const content = (
     <>
       <Tabs
+        className="order-detail-tabs"
         activeKey={activeDetailTab}
         onChange={setActiveDetailTab}
         items={[
